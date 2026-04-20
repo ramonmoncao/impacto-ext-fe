@@ -3,6 +3,7 @@
     "name": "impacto-ext-fe",
     "slug": "impacto-ext-fe",
     "version": "1.0.0",
+    "scheme": "impacto-ext-fe",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -25,6 +26,10 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      "expo-router",
+      "expo-sqlite"
+    ]
   }
 }
