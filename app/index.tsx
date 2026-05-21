@@ -1,20 +1,47 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Image, StatusBar, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Image, StatusBar, KeyboardAvoidingView, Platform, ScrollView, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import api from '../services/api'; // Importando a conexão com o back-end
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const router = useRouter();
 
-  const handleLogin = () => {
-    // Bypass para testar a navegação - enviando o nome via parâmetro
-    if (email === 'teste' && password === '123') {
-      router.push({
-        pathname: '/orcamento',
-        params: { usuario: email } // Passa o nome para a próxima tela
-      }); 
+  const handleLogin = async () => {
+    // 1. Validação simples para não enviar dados vazios
+    if (!email || !password) {
+      Alert.alert("Atenção", "Por favor, preencha o usuário e a senha.");
+      return;
+    }
+
+    try {
+      // 2. Faz a requisição POST para o Spring Boot
+      // O endpoint final será http://192.168.0.243:8080/api/auth/login
+      const response = await api.post('/auth/login', {
+        email: email,
+        senha: password // Mapeando 'password' do front para 'senha' do back
+      });
+
+      // 3. Se o login for bem-sucedido (Status 200 OK)
+      if (response.status === 200) {
+        // Pega o token gerado pelo AuthResponse do back-end
+        const token = response.data.token; 
+        
+        // Navega para a próxima tela
+        router.push({
+          pathname: '/orcamento',
+          params: { usuario: email } 
+        }); 
+      }
+    } catch (error) {
+      // 4. Se o back-end retornar erro (ex: 403 Forbidden ou 401 Unauthorized)
+      console.error("Erro de login:", error);
+      Alert.alert(
+        "Erro de Autenticação", 
+        "Usuário ou senha inválidos. Verifique os dados e tente novamente."
+      );
     }
   };
 

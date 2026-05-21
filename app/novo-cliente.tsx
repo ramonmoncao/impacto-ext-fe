@@ -47,20 +47,18 @@ export default function NovoCliente() {
     }
 
     try {
-      // O Payload é o JSON que o Ramon vai receber no @RequestBody do Spring Boot
-      const payload = {
+  
+      const response = await api.post('/clientes', {
         nome: nome,
-        cnpj: cnpj.replace(/\D/g, ''), // Envia só os números para evitar erro no banco
-        telefone: telefone,
+        cnpj: cnpj.replace(/\D/g, ''),
+        telefone: telefone.replace(/\D/g, ''),
         endereco: endereco
-      };
+      });
 
-      // Faz um POST para a rota de clientes do backend
-      await api.post('/clientes', payload);
-      
-      Alert.alert("Sucesso", "Cliente cadastrado com sucesso no banco de dados!");
-      router.back(); // Volta para a tela de orçamento automaticamente
-      
+      if (response.status === 201 || response.status === 200) {
+        Alert.alert("Sucesso", "Cliente cadastrado com sucesso no banco de dados!");
+        router.back();
+      }      
     } catch (error) {
       console.error(error);
       Alert.alert("Erro de Conexão", "Não foi possível comunicar com o servidor do Ramon. Verifique se o Backend está rodando.");
