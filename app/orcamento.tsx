@@ -1,11 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert, Modal, FlatList } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router'; 
 import MenuLayout from '../components/MenuLayout';
 import api from '../services/api';
 
-// MOCK: Lista de produtos para simular o banco de dados
 const PRODUTOS_MOCK = [
   { id: 'p1', descricao: 'Recarga PQS 4kg', valor: 30.00 },
   { id: 'p2', descricao: 'Recarga CO2 6kg', valor: 90.00 },
@@ -14,43 +13,81 @@ const PRODUTOS_MOCK = [
   { id: 'p5', descricao: 'Suporte de Parede', valor: 15.00 }
 ];
 
-// Gera um array com números de 1 a 20 para o dropdown de quantidade
 const QUANTIDADES = Array.from({ length: 20 }, (_, i) => i + 1);
 
 export default function Orcamento() {
+  // 'usuario' agora recebe o NOME que veio da tela de login
   const { usuario } = useLocalSearchParams(); 
   const router = useRouter(); 
 
-  // Estados do Cliente
   const [buscaClienteText, setBuscaClienteText] = useState('');
   const [clienteSelecionado, setClienteSelecionado] = useState<any>(null);
+  const [clientesResultados, setClientesResultados] = useState<any[]>([]);
+  
+  // Vigia contra bug do apagar rápido
+  const ultimaBuscaRef = useRef('');
 
-  // Estados do Carrinho
   const [itens, setItens] = useState<{id: string, descricao: string, qtd: number, unit: number, total: number}[]>([]);
 
-  // NOVOS ESTADOS: Controles dos Dropdowns e Seleções
-  const [produtoSelecionado, setProdutoSelecionado] = useState(PRODUTOS_MOCK[0]); // Seleciona o primeiro por padrão
-  const [quantidadeSelecionada, setQuantidadeSelecionada] = useState(1); // Padrão de 1 item
+  const [produtoSelecionado, setProdutoSelecionado] = useState(PRODUTOS_MOCK[0]); 
+  const [quantidadeSelecionada, setQuantidadeSelecionada] = useState(1); 
   
   const [modalProdutoVisivel, setModalProdutoVisivel] = useState(false);
   const [modalQtdVisivel, setModalQtdVisivel] = useState(false);
 
-  // FUNÇÕES DE BUSCA E CARRINHO
-  const handleBuscarCliente = async () => {
-    if (!buscaClienteText) return;
+  // Busca em tempo real com trava de segurança
+  const handleBuscarCliente = async (text: string) => {
+    setBuscaClienteText(text);
+    
+    // Zera tudo na hora se a barra for apagada
+    if (!text || text.trim().length === 0) {
+      setClientesResultados([]);
+      setClienteSelecionado(null);
+      ultimaBuscaRef.current = '';
+      return;
+    }
+
+    ultimaBuscaRef.current = text;
+
     try {
-      const response = await api.get('/clientes/buscar', { params: { termo: buscaClienteText } });
-      const clienteEncontrado = Array.isArray(response.data) ? response.data[0] : response.data;
-      if (clienteEncontrado) setClienteSelecionado(clienteEncontrado);
-      else Alert.alert("Aviso", "Nenhum cliente encontrado.");
+      const response = await api.get('/clientes/buscar', { params: { termo: text } });
+      
+      // Descarta resposta se o usuário apagou a caixa antes do servidor responder
+      if (ultimaBuscaRef.current !== text || ultimaBuscaRef.current === '') return;
+
+      const clientesApi = Array.isArray(response.data) ? response.data : [response.data];
+      const termoLower = text.toLowerCase().trim();
+      
+      const filtrados = clientesApi.filter((cliente: any) => {
+        if (!cliente || !cliente.nome) return false;
+        const nomeLower = cliente.nome.toLowerCase();
+        if (nomeLower.startsWith(termoLower)) return true;
+        const palavras = nomeLower.split(' ');
+        return palavras.some((palavra: string) => palavra.startsWith(termoLower));
+      });
+
+      if (ultimaBuscaRef.current === text && text.trim().length > 0) {
+        setClientesResultados(filtrados);
+      }
     } catch (error) {
       console.error(error);
-      Alert.alert("Erro", "Servidor indisponível. Cadastre um novo cliente ou ligue o backend.");
-      setClienteSelecionado({ nome: "Agropecuaria A (Teste Local)", endereco: "Rua XYZ - 177 Monte Mor", telefone: "(19) 99999-9999" });
+      if (ultimaBuscaRef.current !== text || ultimaBuscaRef.current === '') return;
+      
+      const mockFallback = [{ nome: "Impacto Extintores", endereco: "Rua XYZ - 177 Monte Mor", telefone: "(19) 99999-9999" }];
+      const filtradosMock = mockFallback.filter(c => c.nome.toLowerCase().split(' ').some(p => p.startsWith(text.toLowerCase())));
+      
+      if (ultimaBuscaRef.current === text && text.trim().length > 0) {
+        setClientesResultados(filtradosMock);
+      }
     }
   };
 
-  // AGORA PEGA OS DADOS DINÂMICOS DO PRODUTO SELECIONADO
+  const selecionarCliente = (cliente: any) => {
+    setClienteSelecionado(cliente);
+    setBuscaClienteText(cliente.nome);
+    setClientesResultados([]); 
+  };
+
   const handleAdicionarItem = () => {
     if (!produtoSelecionado) {
       Alert.alert("Aviso", "Selecione um produto/serviço primeiro.");
@@ -87,7 +124,7 @@ export default function Orcamento() {
     try {
       const payloadOrcamento = {
         clienteNome: clienteSelecionado.nome,
-        usuarioResponsavel: usuario,
+        usuarioResponsavel: usuario, // Agora salva o nome correto
         itens: itens,
         valorTotal: totalDoOrcamento
       };
@@ -102,21 +139,20 @@ export default function Orcamento() {
   };
 
   return (
-    <MenuLayout activeRoute="/orcamento" pageTitle="Novo Orçamento">
+    <MenuLayout activeRoute="/orcamento" pageTitle={`Novo Orçamento`}>
       
-      {/* Seção: Dados do Cliente */}
-      <View className="mb-6">
+      <View className="mb-6 z-50">
         <Text className="text-2xl font-bold text-gray-800 mb-2">Dados do Cliente</Text>
-        <View className="flex-row items-center gap-x-2">
-          <View className="flex-1 bg-[#e7e7e7] flex-row items-center px-4 rounded-full">
+        <View className="flex-row items-center gap-x-2 relative">
+          <View className="flex-1 bg-[#e7e7e7] flex-row items-center px-4 rounded-full relative z-50">
             <TextInput 
               className="flex-1 h-15 text-black text-base" 
               placeholder="Buscar Cliente" 
               placeholderTextColor="#4a4a4a" 
               value={buscaClienteText}
-              onChangeText={setBuscaClienteText}
+              onChangeText={handleBuscarCliente} // <- Executa ao digitar
             />
-            <TouchableOpacity onPress={handleBuscarCliente} className="p-2">
+            <TouchableOpacity onPress={() => handleBuscarCliente(buscaClienteText)} className="p-2">
               <Feather name="search" size={20} color="#4a4a4a" />
             </TouchableOpacity>
           </View>
@@ -128,6 +164,24 @@ export default function Orcamento() {
             <Text className="text-white font-bold">Novo</Text>
           </TouchableOpacity>
         </View>
+
+        {/* LISTA SUSPENSA ANTI-FANTASMA */}
+        {buscaClienteText.trim().length > 0 && clientesResultados.length > 0 && !clienteSelecionado && (
+          <View className="bg-white border border-gray-300 rounded-lg mt-1 max-h-48 shadow-lg z-50 overflow-hidden">
+            <ScrollView keyboardShouldPersistTaps="handled" nestedScrollEnabled={true}>
+              {clientesResultados.map((cliente, index) => (
+                <TouchableOpacity
+                  key={cliente.id || index}
+                  className="p-3 border-b border-gray-100"
+                  onPress={() => selecionarCliente(cliente)}
+                >
+                  <Text className="text-gray-800 font-bold text-base">{cliente.nome}</Text>
+                  <Text className="text-gray-500 text-xs">{cliente.endereco || 'Endereço não cadastrado'}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        )}
 
         <View className="mt-3 bg-transparent p-1">
           {clienteSelecionado ? (
@@ -142,11 +196,9 @@ export default function Orcamento() {
         </View>
       </View>
 
-      {/* Seção: Adicionar Itens (AGORA FUNCIONAL) */}
-      <View className="mb-6">
+      <View className="mb-6 -z-10">
         <Text className="text-2xl font-bold text-gray-800 mb-2">Adicionar Itens</Text>
         
-        {/* Dropdown de Produto */}
         <View className="flex-row items-center mb-4">
           <Text className="text-lg font-bold">Produto/Serviço: </Text>
           <TouchableOpacity 
@@ -161,7 +213,6 @@ export default function Orcamento() {
         </View>
 
         <View className="flex-row items-center justify-between mb-4">
-          {/* Dropdown de Quantidade */}
           <View className="flex-row items-center">
             <Text className="text-lg font-bold">Qtd: </Text>
             <TouchableOpacity 
@@ -173,7 +224,6 @@ export default function Orcamento() {
             </TouchableOpacity>
           </View>
           
-          {/* Valor Unitário Dinâmico */}
           <Text className="text-lg font-bold">
             Valor Unit: 
             <Text className="font-normal bg-white px-4 py-1 rounded border border-gray-300 ml-2">
@@ -190,8 +240,7 @@ export default function Orcamento() {
         </TouchableOpacity>
       </View>
 
-      {/* Seção: Carrinho */}
-      <View className="mb-6">
+      <View className="mb-6 -z-10">
         <Text className="text-2xl font-bold text-gray-800 mb-2">Carrinho</Text>
         <View className="flex-row border-b border-gray-400 pb-1">
           <Text className="flex-[2] font-bold text-gray-800">Descrição</Text>
@@ -219,8 +268,7 @@ export default function Orcamento() {
         </ScrollView>
       </View>
 
-      {/* Resumo e Rodapé */}
-      <View className="mb-10">
+      <View className="mb-10 -z-10">
          <Text className="text-2xl font-bold mb-2">Resumo</Text>
          <Text className="text-base mb-1"><Text className="font-bold">Observações:</Text> Pagamento por PIX</Text>
          
@@ -243,9 +291,6 @@ export default function Orcamento() {
          </View>
       </View>
 
-      {/* ========================================== */}
-      {/* MODAL: SELECIONAR PRODUTO                  */}
-      {/* ========================================== */}
       <Modal visible={modalProdutoVisivel} transparent={true} animationType="fade">
         <View className="flex-1 justify-center bg-black/60 px-6">
           <View className="bg-white rounded-2xl max-h-[70%] shadow-xl">
@@ -276,9 +321,6 @@ export default function Orcamento() {
         </View>
       </Modal>
 
-      {/* ========================================== */}
-      {/* MODAL: SELECIONAR QUANTIDADE               */}
-      {/* ========================================== */}
       <Modal visible={modalQtdVisivel} transparent={true} animationType="fade">
         <View className="flex-1 justify-center bg-black/60 px-6">
           <View className="bg-white rounded-2xl max-h-[50%] shadow-xl">
