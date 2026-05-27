@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -15,12 +15,13 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import api from '../services/api';
-import { authUtils } from '../services/authUtils'; // Novo!
+import { authUtils } from '../services/authUtils'; 
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false); // Novo!
+  const [loading, setLoading] = useState(false); 
+  const senhaInputRef = useRef<TextInput>(null);
   const router = useRouter();
 
   const handleLogin = async () => {
@@ -102,6 +103,9 @@ export default function Login() {
               onChangeText={setEmail}
               autoCapitalize='none'
               editable={!loading}
+              returnKeyType="next"
+              onSubmitEditing={() => senhaInputRef.current?.focus()}
+              
             />
 
             <Text className='text-[#1a1a1a] text-2xl font-extrabold mb-2 ml-1'>Senha</Text>
@@ -111,6 +115,8 @@ export default function Login() {
               onChangeText={setPassword}
               secureTextEntry
               editable={!loading}
+              onSubmitEditing={handleLogin}
+              ref={senhaInputRef}
             />
 
             <TouchableOpacity
