@@ -43,16 +43,20 @@ export default function Login() {
       // 3. Se o login for bem-sucedido
       if (response.status === 200) {
         const token = response.data.token;
+        
+        // RECUPERADO: Extrai o nome do JSON que o Java devolveu. 
+        // Se der algum erro e não vier o nome, usa o email como plano B.
+        const nomeDoUsuario = response.data.nome || email;
 
         await authUtils.saveToken(token);
         await authUtils.saveUserData({ email });
 
         console.log('Login bem-sucedido! Token:', token);
 
-        // Navega para a próxima tela
-        router.push({
+        // Navega para a próxima tela passando o NOME real
+        router.replace({
           pathname: '/orcamento',
-          params: { usuario: email },
+          params: { usuario: nomeDoUsuario },
         });
       }
     } catch (error: any) {
@@ -105,7 +109,6 @@ export default function Login() {
               editable={!loading}
               returnKeyType="next"
               onSubmitEditing={() => senhaInputRef.current?.focus()}
-              
             />
 
             <Text className='text-[#1a1a1a] text-2xl font-extrabold mb-2 ml-1'>Senha</Text>

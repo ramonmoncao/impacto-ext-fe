@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -24,61 +24,96 @@ const PRODUTOS_MOCK = [
   { id: 'p5', descricao: 'Suporte de Parede', valor: 15.0 },
 ];
 
-// Gera um array com números de 1 a 20 para o dropdown de quantidade
 const QUANTIDADES = Array.from({ length: 20 }, (_, i) => i + 1);
 
 export default function Orcamento() {
   const { usuario } = useLocalSearchParams();
   const router = useRouter();
 
-  // Estados do Cliente
+  // RECUPERADO: Nome do usuário real
+  const [nomeUsuarioLogado, setNomeUsuarioLogado] = useState<any>(usuario);
+
+  // Estados do Cliente & Busca Responsiva
   const [buscaClienteText, setBuscaClienteText] = useState('');
   const [clienteSelecionado, setClienteSelecionado] = useState<any>(null);
-  const [clientesEncontrados, setClientesEncontrados] = useState<any[]>([]);
-  const [modalClienteVisivel, setModalClienteVisivel] = useState(false);
+  const [clientesResultados, setClientesResultados] = useState<any[]>([]);
+  const ultimaBuscaRef = useRef(''); // Vigia Anti-Fantasma
+
+  // RECUPERADO: Observações Digitáveis
+  const [observacoes, setObservacoes] = useState('');
 
   // Estados do Carrinho
   const [itens, setItens] = useState<
     { id: string; descricao: string; qtd: number; unit: number; total: number }[]
   >([]);
 
-  // NOVOS ESTADOS: Controles dos Dropdowns e Seleções
-  const [produtoSelecionado, setProdutoSelecionado] = useState(PRODUTOS_MOCK[0]); // Seleciona o primeiro por padrão
-  const [quantidadeSelecionada, setQuantidadeSelecionada] = useState(1); // Padrão de 1 item
+  // Controles dos Dropdowns e Seleções
+  const [produtoSelecionado, setProdutoSelecionado] = useState(PRODUTOS_MOCK[0]); 
+  const [quantidadeSelecionada, setQuantidadeSelecionada] = useState(1); 
 
   const [modalProdutoVisivel, setModalProdutoVisivel] = useState(false);
   const [modalQtdVisivel, setModalQtdVisivel] = useState(false);
 
-  // FUNÇÕES DE BUSCA E CARRINHO
-  const handleBuscarCliente = async () => {
-    if (!buscaClienteText) {
-      Alert.alert('Aviso', 'Digite um nome ou CNPJ para buscar.');
+  // RECUPERADO: Busca do nome do vendedor no Java caso receba só o email
+  useEffect(() => {
+    if (usuario && typeof usuario === 'string' && usuario.includes('@')) {
+      api.get(`/users/buscarPorEmail`, { params: { email: usuario } })
+        .then(response => {
+          if (response.data && (response.data.nome || response.data.name)) {
+            setNomeUsuarioLogado(response.data.nome || response.data.name);
+          }
+        })
+        .catch(error => console.log("Usando email como fallback."));
+    } else {
+      setNomeUsuarioLogado(usuario);
+    }
+  }, [usuario]);
+
+  // RECUPERADO: Busca ao digitar (Live Search) com trava de Segurança
+  const handleBuscarClienteLive = async (text: string) => {
+    setBuscaClienteText(text);
+    
+    if (!text || text.trim().length === 0) {
+      setClientesResultados([]);
+      setClienteSelecionado(null);
+      ultimaBuscaRef.current = '';
       return;
     }
 
-    try {
-      const response = await api.get('/clientes/buscar', { params: { termo: buscaClienteText } });
-      const resultados = response.data;
+    ultimaBuscaRef.current = text;
 
-      if (resultados && resultados.length === 1) {
-        // Se achou EXATAMENTE 1 cliente, já seleciona ele direto (mais rápido pro usuário)
-        setClienteSelecionado(resultados[0]);
-      } else if (resultados && resultados.length > 1) {
-        // Se achou MAIS DE 1, guarda a lista e abre o Modal para o usuário escolher
-        setClientesEncontrados(resultados);
-        setModalClienteVisivel(true);
-      } else {
-        // Se não achou NENHUM
-        Alert.alert('Não Encontrado', 'Nenhum cliente encontrado com este termo.');
-        setClienteSelecionado(null);
+    try {
+      const response = await api.get('/clientes/buscar', { params: { termo: text } });
+      
+      if (ultimaBuscaRef.current !== text || ultimaBuscaRef.current === '') return;
+
+      const clientesApi = Array.isArray(response.data) ? response.data : [response.data];
+      const termoLower = text.toLowerCase().trim();
+      
+      const filtrados = clientesApi.filter((cliente: any) => {
+        if (!cliente || !cliente.nome) return false;
+        const nomeLower = cliente.nome.toLowerCase();
+        if (nomeLower.startsWith(termoLower)) return true;
+        const palavras = nomeLower.split(' ');
+        return palavras.some((palavra: string) => palavra.startsWith(termoLower));
+      });
+
+      if (ultimaBuscaRef.current === text && text.trim().length > 0) {
+        setClientesResultados(filtrados);
       }
     } catch (error) {
-      console.error('Erro na busca:', error);
-      Alert.alert('Erro', 'Falha ao comunicar com o servidor.');
+      console.error(error);
+      if (ultimaBuscaRef.current !== text || ultimaBuscaRef.current === '') return;
+      setClientesResultados([]);
     }
   };
 
-  // AGORA PEGA OS DADOS DINÂMICOS DO PRODUTO SELECIONADO
+  const selecionarCliente = (cliente: any) => {
+    setClienteSelecionado(cliente);
+    setBuscaClienteText(cliente.nome);
+    setClientesResultados([]);
+  };
+
   const handleAdicionarItem = () => {
     if (!produtoSelecionado) {
       Alert.alert('Aviso', 'Selecione um produto/serviço primeiro.');
@@ -102,6 +137,7 @@ export default function Orcamento() {
 
   const totalDoOrcamento = itens.reduce((acumulador, item) => acumulador + item.total, 0);
 
+  // RECUPERADO: Mapeamento exato para o MongoDB Atlas (Classes Java)
   const handleSalvarOrcamento = async () => {
     if (!clienteSelecionado) {
       Alert.alert('Atenção', 'Busque ou cadastre um cliente antes de salvar o orçamento.');
@@ -114,38 +150,51 @@ export default function Orcamento() {
 
     try {
       const payloadOrcamento = {
-        clienteNome: clienteSelecionado.nome,
-        usuarioResponsavel: usuario,
-        itens: itens,
+        nomeCliente: clienteSelecionado.nome,
+        endereco: clienteSelecionado.endereco, 
+        telefone: clienteSelecionado.telefone, 
+        usuarioResponsavel: nomeUsuarioLogado, // Nome Real do Vendedor
+        observacoes: observacoes,              // Texto Digitado
         valorTotal: totalDoOrcamento,
+        
+        // Formata o carrinho para a classe ItemOrcamento do Java
+        itens: itens.map(item => ({
+          descricaoProduto: item.descricao,
+          quantidade: item.qtd,
+          valorUnitario: item.unit
+        }))
       };
-      await api.post('/orcamentos', payloadOrcamento);
-      Alert.alert('Sucesso!', 'Orçamento salvo e vinculado ao cliente!');
+
+      await api.post('/api/orcamentos', payloadOrcamento);
+      
+      Alert.alert('Sucesso!', 'Orçamento salvo com sucesso no banco de dados!');
+      
+      // Limpa os dados
       setItens([]);
       setClienteSelecionado(null);
       setBuscaClienteText('');
+      setObservacoes('');
     } catch (error) {
+      console.error(error);
       Alert.alert('Erro', 'Falha ao salvar orçamento no banco de dados.');
     }
   };
 
   return (
-    <MenuLayout activeRoute='/orcamento' pageTitle='Novo Orçamento'>
+    <MenuLayout activeRoute='/orcamento' pageTitle={`Novo Orçamento`}>
       {/* Seção: Dados do Cliente */}
-      <View className='mb-6'>
+      <View className='mb-6 z-50'>
         <Text className='text-2xl font-bold text-gray-800 mb-2'>Dados do Cliente</Text>
-        <View className='flex-row items-center gap-x-2'>
-          <View className='flex-1 bg-[#e7e7e7] flex-row items-center px-4 rounded-full'>
+        <View className='flex-row items-center gap-x-2 relative'>
+          <View className='flex-1 bg-[#e7e7e7] flex-row items-center px-4 rounded-full relative z-50'>
             <TextInput
               className='flex-1 h-15 text-black text-base'
               placeholder='Buscar Cliente'
               placeholderTextColor='#4a4a4a'
               value={buscaClienteText}
-              onChangeText={setBuscaClienteText}
-              returnKeyType='search'
-              onSubmitEditing={handleBuscarCliente}
+              onChangeText={handleBuscarClienteLive} // Busca Responsiva
             />
-            <TouchableOpacity onPress={handleBuscarCliente} className='p-2'>
+            <TouchableOpacity onPress={() => handleBuscarClienteLive(buscaClienteText)} className='p-2'>
               <Feather name='search' size={20} color='#4a4a4a' />
             </TouchableOpacity>
           </View>
@@ -157,6 +206,27 @@ export default function Orcamento() {
             <Text className='text-white font-bold'>Novo</Text>
           </TouchableOpacity>
         </View>
+
+        {/* LISTA SUSPENSA ANTI-FANTASMA (Mantive o CNPJ que o Erik adicionou) */}
+        {buscaClienteText.trim().length > 0 && clientesResultados.length > 0 && !clienteSelecionado && (
+          <View className='bg-white border border-gray-300 rounded-lg mt-1 max-h-48 shadow-lg z-50 overflow-hidden'>
+            <ScrollView keyboardShouldPersistTaps='handled' nestedScrollEnabled={true}>
+              {clientesResultados.map((cliente, index) => (
+                <TouchableOpacity
+                  key={cliente.id || index}
+                  className='p-3 border-b border-gray-100'
+                  onPress={() => selecionarCliente(cliente)}
+                >
+                  <Text className='text-gray-800 font-bold text-base'>{cliente.nome}</Text>
+                  <Text className='text-sm text-gray-600 font-medium'>CNPJ/CPF: {cliente.cnpj}</Text>
+                  {cliente.endereco && (
+                    <Text className='text-sm text-gray-500' numberOfLines={1}>{cliente.endereco}</Text>
+                  )}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        )}
 
         <View className='mt-3 bg-transparent p-1'>
           {clienteSelecionado ? (
@@ -183,11 +253,10 @@ export default function Orcamento() {
         </View>
       </View>
 
-      {/* Seção: Adicionar Itens (AGORA FUNCIONAL) */}
-      <View className='mb-6'>
+      {/* Seção: Adicionar Itens */}
+      <View className='mb-6 -z-10'>
         <Text className='text-2xl font-bold text-gray-800 mb-2'>Adicionar Itens</Text>
 
-        {/* Dropdown de Produto */}
         <View className='flex-row items-center mb-4'>
           <Text className='text-lg font-bold'>Produto/Serviço: </Text>
           <TouchableOpacity
@@ -202,7 +271,6 @@ export default function Orcamento() {
         </View>
 
         <View className='flex-row items-center justify-between mb-4'>
-          {/* Dropdown de Quantidade */}
           <View className='flex-row items-center'>
             <Text className='text-lg font-bold'>Qtd: </Text>
             <TouchableOpacity
@@ -214,7 +282,6 @@ export default function Orcamento() {
             </TouchableOpacity>
           </View>
 
-          {/* Valor Unitário Dinâmico */}
           <Text className='text-lg font-bold'>
             Valor Unit:
             <Text className='font-normal bg-white px-4 py-1 rounded border border-gray-300 ml-2'>
@@ -233,7 +300,7 @@ export default function Orcamento() {
       </View>
 
       {/* Seção: Carrinho */}
-      <View className='mb-6'>
+      <View className='mb-6 -z-10'>
         <Text className='text-2xl font-bold text-gray-800 mb-2'>Carrinho</Text>
         <View className='flex-row border-b border-gray-400 pb-1'>
           <Text className='flex-[2] font-bold text-gray-800'>Descrição</Text>
@@ -271,11 +338,18 @@ export default function Orcamento() {
       </View>
 
       {/* Resumo e Rodapé */}
-      <View className='mb-10'>
+      <View className='mb-10 -z-10'>
         <Text className='text-2xl font-bold mb-2'>Resumo</Text>
-        <Text className='text-base mb-1'>
-          <Text className='font-bold'>Observações:</Text> Pagamento por PIX
-        </Text>
+        
+        {/* RECUPERADO: Campo de Observação Editável */}
+        <Text className='font-bold text-base mb-1'>Observações:</Text>
+        <TextInput 
+          className='bg-white border border-gray-300 rounded-md px-3 py-2 text-base mb-4'
+          value={observacoes}
+          onChangeText={setObservacoes}
+          placeholder='Ex: Pagamento por PIX, Vencimento em 30 dias...'
+          multiline
+        />
 
         <Text className='text-lg font-bold mb-6'>
           Total do Orçamento:{' '}
@@ -297,54 +371,7 @@ export default function Orcamento() {
         </View>
       </View>
 
-      {/* ========================================== */}
-      {/* MODAL: SELECIONAR CLIENTE (BUSCA)          */}
-      {/* ========================================== */}
-      <Modal visible={modalClienteVisivel} transparent={true} animationType='fade'>
-        <TouchableWithoutFeedback onPress={() => setModalClienteVisivel(false)}>
-          <View className='flex-1 justify-center bg-black/60 px-6'>
-            <TouchableWithoutFeedback>
-              <View className='bg-white rounded-2xl max-h-[70%] shadow-xl'>
-                <View className='bg-[#cc0000] p-4 rounded-t-2xl flex-row justify-between items-center'>
-                  <Text className='text-white font-bold text-xl'>Selecione o Cliente</Text>
-                  <TouchableOpacity onPress={() => setModalClienteVisivel(false)}>
-                    <Feather name='x' size={24} color='white' />
-                  </TouchableOpacity>
-                </View>
-                <FlatList
-                  data={clientesEncontrados}
-                  keyExtractor={(item, index) => (item.id ? item.id.toString() : index.toString())}
-                  className='p-2'
-                  renderItem={({ item }) => (
-                    <TouchableOpacity
-                      className='p-4 border-b border-gray-200'
-                      onPress={() => {
-                        // Quando o usuário clica, seleciona o cliente e fecha a telinha
-                        setClienteSelecionado(item);
-                        setModalClienteVisivel(false);
-                      }}
-                    >
-                      <Text className='text-lg font-bold text-gray-800'>{item.nome}</Text>
-                      <Text className='text-sm text-gray-600 font-medium'>
-                        CNPJ/CPF: {item.cnpj}
-                      </Text>
-                      {item.endereco && (
-                        <Text className='text-sm text-gray-500' numberOfLines={1}>
-                          {item.endereco}
-                        </Text>
-                      )}
-                    </TouchableOpacity>
-                  )}
-                />
-              </View>
-            </TouchableWithoutFeedback>
-          </View>
-        </TouchableWithoutFeedback>
-      </Modal>
-
-      {/* ========================================== */}
-      {/* MODAL: SELECIONAR PRODUTO                  */}
-      {/* ========================================== */}
+      {/* MODAL: SELECIONAR PRODUTO */}
       <Modal visible={modalProdutoVisivel} transparent={true} animationType='fade'>
         <TouchableWithoutFeedback onPress={() => setModalProdutoVisivel(false)}>
           <View className='flex-1 justify-center bg-black/60 px-6'>
@@ -381,9 +408,7 @@ export default function Orcamento() {
         </TouchableWithoutFeedback>
       </Modal>
 
-      {/* ========================================== */}
-      {/* MODAL: SELECIONAR QUANTIDADE               */}
-      {/* ========================================== */}
+      {/* MODAL: SELECIONAR QUANTIDADE */}
       <Modal visible={modalQtdVisivel} transparent={true} animationType='fade'>
         <TouchableWithoutFeedback onPress={() => setModalQtdVisivel(false)}>
           <View className='flex-1 justify-center bg-black/60 px-6'>
