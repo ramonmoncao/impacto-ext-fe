@@ -9,6 +9,7 @@ import {
   Alert,
   Modal,
   FlatList,
+  ActivityIndicator,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -28,35 +29,36 @@ const PRODUTOS_MOCK = [
 
 const QUANTIDADES = Array.from({ length: 20 }, (_, i) => i + 1);
 
+interface ItemCarrinho {
+  id: string;
+  descricao: string;
+  qtd: number;
+  unit: number;
+  total: number;
+}
+
 export default function Orcamento() {
-  const { usuario } = useLocalSearchParams();
+  const { usuario, editId } = useLocalSearchParams();
   const router = useRouter();
 
-  // RECUPERADO: Nome do usuário real
+  // Estados principais
   const [nomeUsuarioLogado, setNomeUsuarioLogado] = useState<any>(usuario);
-
-  // Estados do Cliente & Busca Responsiva
   const [buscaClienteText, setBuscaClienteText] = useState('');
   const [clienteSelecionado, setClienteSelecionado] = useState<any>(null);
   const [clientesResultados, setClientesResultados] = useState<any[]>([]);
-  const ultimaBuscaRef = useRef(''); // Vigia Anti-Fantasma
-
-  // RECUPERADO: Observações Digitáveis
   const [observacoes, setObservacoes] = useState('');
-
-  // Estados do Carrinho
-  const [itens, setItens] = useState<
-    { id: string; descricao: string; qtd: number; unit: number; total: number }[]
-  >([]);
+  const [itens, setItens] = useState<ItemCarrinho[]>([]);
+  const [loadingEdicao, setLoadingEdicao] = useState<boolean>(false);
 
   // Controles dos Dropdowns e Seleções
   const [produtoSelecionado, setProdutoSelecionado] = useState(PRODUTOS_MOCK[0]); 
   const [quantidadeSelecionada, setQuantidadeSelecionada] = useState(1); 
-
   const [modalProdutoVisivel, setModalProdutoVisivel] = useState(false);
   const [modalQtdVisivel, setModalQtdVisivel] = useState(false);
 
-  // RECUPERADO: Busca do nome do vendedor no Java caso receba só o email
+  const ultimaBuscaRef = useRef(''); // Vigia Anti-Fantasma
+
+  // EFECT 1: Busca o nome do vendedor no Java caso receba só o email
   useEffect(() => {
     if (usuario && typeof usuario === 'string' && usuario.includes('@')) {
       api.get(`/users/buscarPorEmail`, { params: { email: usuario } })
@@ -65,13 +67,56 @@ export default function Orcamento() {
             setNomeUsuarioLogado(response.data.nome || response.data.name);
           }
         })
-        .catch(error => console.log("Usando email como fallback."));
-    } else {
+        .catch(() => console.log("Usando email como fallback."));
+    } else if (usuario) {
       setNomeUsuarioLogado(usuario);
     }
   }, [usuario]);
 
-  // RECUPERADO: Busca ao digitar (Live Search) com trava de Segurança
+  // EFECT 2: NOVA FUNCIONALIDADE - Captura e Preenche os dados caso seja uma Edição
+  useEffect(() => {
+    if (editId) {
+      const carregarOrcamentoParaEdicao = async () => {
+        try {
+          setLoadingEdicao(true);
+          const response = await api.get(`/api/orcamentos/${editId}`);
+          const orcamentoSalvo = response.data;
+
+          if (orcamentoSalvo) {
+            // Mapeia os dados de volta para o estado do formulário do front-end
+            setClienteSelecionado({
+              nome: orcamentoSalvo.nomeCliente,
+              endereco: orcamentoSalvo.endereco,
+              telefone: orcamentoSalvo.telefone,
+            });
+            setBuscaClienteText(orcamentoSalvo.nomeCliente || '');
+            setObservacoes(orcamentoSalvo.observacoes || '');
+            
+            // Remapeia a estrutura de itens do Java para o carrinho do React Native
+            if (orcamentoSalvo.itens && Array.isArray(orcamentoSalvo.itens)) {
+              const itensMapeados: ItemCarrinho[] = orcamentoSalvo.itens.map((item: any, idx: number) => ({
+                id: item.id ? item.id.toString() : `edit-${idx}-${Date.now()}`,
+                descricao: item.descricaoProduto || item.descricao || 'Produto não identificado',
+                qtd: item.quantidade || 1,
+                unit: item.valorUnitario || 0,
+                total: (item.quantidade || 1) * (item.valorUnitario || 0),
+              }));
+              setItens(itensMapeados);
+            }
+          }
+        } catch (error) {
+          console.error('Erro ao carregar orçamento para edição:', error);
+          Alert.alert('Erro', 'Não foi possível carregar os dados originais do orçamento.');
+        } finally {
+          setLoadingEdicao(false);
+        }
+      };
+
+      carregarOrcamentoParaEdicao();
+    }
+  }, [editId]);
+
+  // Busca ao digitar (Live Search) com trava de Segurança
   const handleBuscarClienteLive = async (text: string) => {
     setBuscaClienteText(text);
     
@@ -139,7 +184,7 @@ export default function Orcamento() {
 
   const totalDoOrcamento = itens.reduce((acumulador, item) => acumulador + item.total, 0);
 
-  // RECUPERADO: Mapeamento exato para o MongoDB Atlas (Classes Java)
+  // Mapeamento exato para o MongoDB Atlas (Classes Java) atualizado para Edições e Criações
   const handleSalvarOrcamento = async (mostrarAlerta = true): Promise<string | null> => {
     if (!clienteSelecionado) {
       Alert.alert('Atenção', 'Busque ou cadastre um cliente antes de salvar o orçamento.');
@@ -155,11 +200,9 @@ export default function Orcamento() {
         nomeCliente: clienteSelecionado.nome,
         endereco: clienteSelecionado.endereco, 
         telefone: clienteSelecionado.telefone, 
-        usuarioResponsavel: nomeUsuarioLogado, // Nome Real do Vendedor
-        observacoes: observacoes,              // Texto Digitado
+        usuarioResponsavel: nomeUsuarioLogado, 
+        observacoes: observacoes,              
         valorTotal: totalDoOrcamento,
-        
-        // Formata o carrinho para a classe ItemOrcamento do Java
         itens: itens.map(item => ({
           descricaoProduto: item.descricao,
           quantidade: item.qtd,
@@ -167,28 +210,39 @@ export default function Orcamento() {
         }))
       };
 
-      const response = await api.post('/api/orcamentos', payloadOrcamento);
-
-      if(mostrarAlerta){
-        Alert.alert('Sucesso!', 'Orçamento salvo com sucesso no banco de dados!');
+      let response;
+      
+      // NOVA LÓGICA: Se houver editId, faz um PUT para atualizar, caso contrário faz um POST normal
+      if (editId) {
+        response = await api.put(`/api/orcamentos/${editId}`, payloadOrcamento);
+        if (mostrarAlerta) {
+          Alert.alert('Sucesso!', 'Orçamento atualizado com sucesso no banco de dados!');
+        }
+        // Retorna para a tela de orçamentos fechados após concluir a edição
+        router.replace('/orcamentos-fechados');
+      } else {
+        response = await api.post('/api/orcamentos', payloadOrcamento);
+        if (mostrarAlerta) {
+          Alert.alert('Sucesso!', 'Orçamento salvo com sucesso no banco de dados!');
+        }
       }
       
-      // Limpa os dados
+      // Limpa os dados do estado após salvar com sucesso
       setItens([]);
       setClienteSelecionado(null);
       setBuscaClienteText('');
       setObservacoes('');
-      return response.data.id;
+      
+      return editId ? (editId as string) : response.data.id;
     } catch (error) {
       console.error(error);
-      Alert.alert('Erro', 'Falha ao salvar orçamento no banco de dados.');
+      Alert.alert('Erro', `Falha ao ${editId ? 'atualizar' : 'salvar'} orçamento no banco de dados.`);
       return null;
     }
   };
 
   const handleGerarPdf = async () => {
     const orcamentoId = await handleSalvarOrcamento(false);
-    
     if (!orcamentoId) return; 
 
     try {
@@ -206,6 +260,10 @@ export default function Orcamento() {
           dialogTitle: 'Visualizar Orçamento',
           UTI: 'com.adobe.pdf',
         });
+        
+        if (editId) {
+          router.replace('/orcamentos-fechados');
+        }
       } else {
         Alert.alert('Erro', 'O servidor não conseguiu gerar o PDF.');
       }
@@ -215,8 +273,30 @@ export default function Orcamento() {
     }
   };
 
+  if (loadingEdicao) {
+    return (
+      <MenuLayout activeRoute='/orcamento' pageTitle="Editando Orçamento">
+        <View className="flex-1 justify-center items-center py-20">
+          <ActivityIndicator size="large" color="#cc0000" />
+          <Text className="text-gray-500 mt-2 font-medium">Buscando dados no servidor...</Text>
+        </View>
+      </MenuLayout>
+    );
+  }
+
   return (
-    <MenuLayout activeRoute='/orcamento' pageTitle={`Novo Orçamento`}>
+    <MenuLayout activeRoute='/orcamento' pageTitle={editId ? `Editar Orçamento` : `Novo Orçamento`}>
+      
+      {/* Indicador Visual de Edição no Topo */}
+      {editId && (
+        <View className="bg-green-100 border border-green-300 rounded-xl p-3 mb-4 flex-row items-center">
+          <Feather name="edit" size={16} color="#15803d" />
+          <Text className="text-green-800 text-xs font-bold ml-2 uppercase">
+            Modo de Edição Ativo (Orçamento #{editId.toString().substring(0, 8)})
+          </Text>
+        </View>
+      )}
+
       {/* Seção: Dados do Cliente */}
       <View className='mb-6 z-50'>
         <Text className='text-2xl font-bold text-gray-800 mb-2'>Dados do Cliente</Text>
@@ -227,7 +307,7 @@ export default function Orcamento() {
               placeholder='Buscar Cliente'
               placeholderTextColor='#4a4a4a'
               value={buscaClienteText}
-              onChangeText={handleBuscarClienteLive} // Busca Responsiva
+              onChangeText={handleBuscarClienteLive} 
             />
             <TouchableOpacity onPress={() => handleBuscarClienteLive(buscaClienteText)} className='p-2'>
               <Feather name='search' size={20} color='#4a4a4a' />
@@ -242,7 +322,7 @@ export default function Orcamento() {
           </TouchableOpacity>
         </View>
 
-        {/* LISTA SUSPENSA ANTI-FANTASMA (Mantive o CNPJ que o Erik adicionou) */}
+        {/* LISTA SUSPENSA ANTI-FANTASMA */}
         {buscaClienteText.trim().length > 0 && clientesResultados.length > 0 && !clienteSelecionado && (
           <View className='bg-white border border-gray-300 rounded-lg mt-1 max-h-48 shadow-lg z-50 overflow-hidden'>
             <ScrollView keyboardShouldPersistTaps='handled' nestedScrollEnabled={true}>
@@ -372,11 +452,10 @@ export default function Orcamento() {
         </ScrollView>
       </View>
 
-      {/* Resumo e Rodapé */}
+      {/* Seção: Resumo e Rodapé */}
       <View className='mb-10 -z-10'>
         <Text className='text-2xl font-bold mb-2'>Resumo</Text>
         
-        {/* RECUPERADO: Campo de Observação Editável */}
         <Text className='font-bold text-base mb-1'>Observações:</Text>
         <TextInput 
           className='bg-white border border-gray-300 rounded-md px-3 py-2 text-base mb-4'
@@ -395,16 +474,16 @@ export default function Orcamento() {
 
         <View className='flex-row gap-x-4'>
           <TouchableOpacity
-            className='flex-1 bg-[#cc0000] py-3 rounded-full items-center shadow-md'
-            onPress={handleSalvarOrcamento}
+            className='flex-1 bg-green-600 py-3 rounded-full items-center shadow-md'
+            onPress={() => handleSalvarOrcamento()}
           >
-            <Text className='text-white font-bold text-lg'>Salvar</Text>
+            <Text className='text-white font-bold text-lg'>{editId ? 'Atualizar' : 'Salvar'}</Text>
           </TouchableOpacity>
           <TouchableOpacity 
             className='flex-1 bg-[#cc0000] py-3 rounded-full items-center shadow-md'
             onPress={handleGerarPdf}
           >
-            <Text className='text-white font-bold text-lg'>Gerar PDF</Text>
+            <Text className='text-white font-bold text-lg'>{editId ? 'Atualizar e PDF' : 'Gerar PDF'}</Text>
           </TouchableOpacity>
         </View>
       </View>
