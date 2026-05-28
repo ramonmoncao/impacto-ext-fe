@@ -13,6 +13,8 @@ import {
 import { Feather } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import MenuLayout from '../components/MenuLayout';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 import api from '../services/api';
 
 // MOCK: Lista de produtos para simular o banco de dados
@@ -138,14 +140,14 @@ export default function Orcamento() {
   const totalDoOrcamento = itens.reduce((acumulador, item) => acumulador + item.total, 0);
 
   // RECUPERADO: Mapeamento exato para o MongoDB Atlas (Classes Java)
-  const handleSalvarOrcamento = async () => {
+  const handleSalvarOrcamento = async (mostrarAlerta = true): Promise<string | null> => {
     if (!clienteSelecionado) {
       Alert.alert('Atenção', 'Busque ou cadastre um cliente antes de salvar o orçamento.');
-      return;
+      return null;
     }
     if (itens.length === 0) {
       Alert.alert('Atenção', 'O carrinho está vazio.');
-      return;
+      return null;
     }
 
     try {
@@ -165,18 +167,51 @@ export default function Orcamento() {
         }))
       };
 
-      await api.post('/api/orcamentos', payloadOrcamento);
-      
-      Alert.alert('Sucesso!', 'Orçamento salvo com sucesso no banco de dados!');
+      const response = await api.post('/api/orcamentos', payloadOrcamento);
+
+      if(mostrarAlerta){
+        Alert.alert('Sucesso!', 'Orçamento salvo com sucesso no banco de dados!');
+      }
       
       // Limpa os dados
       setItens([]);
       setClienteSelecionado(null);
       setBuscaClienteText('');
       setObservacoes('');
+      return response.data.id;
     } catch (error) {
       console.error(error);
       Alert.alert('Erro', 'Falha ao salvar orçamento no banco de dados.');
+      return null;
+    }
+  };
+
+  const handleGerarPdf = async () => {
+    const orcamentoId = await handleSalvarOrcamento(false);
+    
+    if (!orcamentoId) return; 
+
+    try {
+      Alert.alert('Processando', 'Gerando o seu documento PDF...');
+
+      const nomeArquivo = `Orcamento_${Date.now()}.pdf`;
+      const localUri = `${FileSystem.documentDirectory}${nomeArquivo}`;
+      const urlBe = `${api.defaults.baseURL}/api/orcamentos/${orcamentoId}/pdf`;
+
+      const downloadResult = await FileSystem.downloadAsync(urlBe, localUri);
+
+      if (downloadResult.status === 200) {
+        await Sharing.shareAsync(downloadResult.uri, {
+          mimeType: 'application/pdf',
+          dialogTitle: 'Visualizar Orçamento',
+          UTI: 'com.adobe.pdf',
+        });
+      } else {
+        Alert.alert('Erro', 'O servidor não conseguiu gerar o PDF.');
+      }
+    } catch (error) {
+      console.error('Erro ao baixar PDF:', error);
+      Alert.alert('Erro', 'Falha ao baixar o arquivo PDF do servidor.');
     }
   };
 
@@ -365,7 +400,10 @@ export default function Orcamento() {
           >
             <Text className='text-white font-bold text-lg'>Salvar</Text>
           </TouchableOpacity>
-          <TouchableOpacity className='flex-1 bg-[#cc0000] py-3 rounded-full items-center shadow-md'>
+          <TouchableOpacity 
+            className='flex-1 bg-[#cc0000] py-3 rounded-full items-center shadow-md'
+            onPress={handleGerarPdf}
+          >
             <Text className='text-white font-bold text-lg'>Gerar PDF</Text>
           </TouchableOpacity>
         </View>
