@@ -73,24 +73,35 @@ export default function Orcamento() {
     }
   }, [usuario]);
 
-  // EFECT 2: NOVA FUNCIONALIDADE - Captura e Preenche os dados caso seja uma Edição
-  useEffect(() => {
-    if (editId) {
-      const carregarOrcamentoParaEdicao = async () => {
-        try {
-          setLoadingEdicao(true);
-          const response = await api.get(`/api/orcamentos/${editId}`);
-          const orcamentoSalvo = response.data;
+// EFECT 2: NOVA FUNCIONALIDADE - Captura e Preenche os dados caso seja uma Edição
+useEffect(() => {
+  if (editId) {
+    const carregarOrcamentoParaEdicao = async () => {
+      try {
+        setLoadingEdicao(true);
+        const response = await api.get(`/api/orcamentos/${editId}`);
+        const orcamentoSalvo = response.data;
 
-          if (orcamentoSalvo) {
-            // Mapeia os dados de volta para o estado do formulário do front-end
-            setClienteSelecionado({
-              nome: orcamentoSalvo.nomeCliente,
-              endereco: orcamentoSalvo.endereco,
-              telefone: orcamentoSalvo.telefone,
-            });
-            setBuscaClienteText(orcamentoSalvo.nomeCliente || '');
-            setObservacoes(orcamentoSalvo.observacoes || '');
+        if (orcamentoSalvo) {
+          setClienteSelecionado({
+            nome: orcamentoSalvo.nomeCliente,
+            endereco: orcamentoSalvo.endereco,
+            telefone: orcamentoSalvo.telefone,
+          });
+          setBuscaClienteText(orcamentoSalvo.nomeCliente || '');
+          setObservacoes(orcamentoSalvo.observacoes || '');
+
+          // ========================================================
+          // CORREÇÃO: Recupera o Vendedor original para não apagá-lo ao editar!
+          // ========================================================
+          if (orcamentoSalvo.usuarioResponsavel) {
+            setNomeUsuarioLogado(orcamentoSalvo.usuarioResponsavel);
+          }else {
+            // Se o orçamento era velho e não tinha dono, assume que VOCÊ é o dono agora
+            setNomeUsuarioLogado(usuario); 
+          }
+          // Remapeia a estrutura de itens...
+          // ... (resto do código igual)
             
             // Remapeia a estrutura de itens do Java para o carrinho do React Native
             if (orcamentoSalvo.itens && Array.isArray(orcamentoSalvo.itens)) {
@@ -218,8 +229,13 @@ export default function Orcamento() {
         if (mostrarAlerta) {
           Alert.alert('Sucesso!', 'Orçamento atualizado com sucesso no banco de dados!');
         }
-        // Retorna para a tela de orçamentos fechados após concluir a edição
-        router.replace('/orcamentos-fechados');
+        
+        // CORREÇÃO: Retorna para a tela de orçamentos fechados DEVOLVENDO o usuário!
+        router.replace({ 
+          pathname: '/orcamentos-fechados', 
+          params: { usuario } 
+        });
+        
       } else {
         response = await api.post('/api/orcamentos', payloadOrcamento);
         if (mostrarAlerta) {
@@ -254,7 +270,7 @@ export default function Orcamento() {
 
       const downloadResult = await FileSystem.downloadAsync(urlBe, localUri);
 
-      if (downloadResult.status === 200) {
+if (downloadResult.status === 200) {
         await Sharing.shareAsync(downloadResult.uri, {
           mimeType: 'application/pdf',
           dialogTitle: 'Visualizar Orçamento',
@@ -262,7 +278,11 @@ export default function Orcamento() {
         });
         
         if (editId) {
-          router.replace('/orcamentos-fechados');
+          // CORREÇÃO AQUI TAMBÉM:
+          router.replace({ 
+            pathname: '/orcamentos-fechados', 
+            params: { usuario } 
+          });
         }
       } else {
         Alert.alert('Erro', 'O servidor não conseguiu gerar o PDF.');
