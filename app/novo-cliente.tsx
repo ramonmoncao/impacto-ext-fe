@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Alert, ActivityIndicator, KeyboardAvoidingView } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import MenuLayout from '../components/MenuLayout';
 import api from '../services/api';
@@ -13,7 +13,10 @@ export default function NovoCliente() {
   const [cnpj, setCnpj] = useState('');
   const [telefone, setTelefone] = useState('');
   const [endereco, setEndereco] = useState('');
-  const [loading, setLoading] = useState(false); 
+  const [numero, setNumero] = useState('');
+  const [bairro, setBairro] = useState('');
+  const [cidade, setCidade] = useState('');
+  const [loading, setLoading] = useState(false);
 
   const formPreenchido =
     nome.length > 0 || cnpj.length > 0 || telefone.length > 0 || endereco.length > 0;
@@ -107,9 +110,9 @@ export default function NovoCliente() {
     }
 
     setLoading(true);
-    
+
     const token = await AsyncStorage.getItem('authToken');
-    console.log("Token atual:", token);
+    console.log('Token atual:', token);
 
     try {
       const response = await api.post('/clientes', {
@@ -117,6 +120,9 @@ export default function NovoCliente() {
         cnpj: cnpj.replace(/\D/g, ''),
         telefone: telefone.replace(/\D/g, ''),
         endereco: endereco.trim(),
+        numero: numero.trim(),
+        bairro: bairro.trim(),
+        cidade: cidade.trim(),
       });
 
       if (response.status === 201 || response.status === 200) {
@@ -158,78 +164,104 @@ export default function NovoCliente() {
       hasUnsavedChanges={formPreenchido}
     >
       <View className='mb-6 mt-4'>
-        <Text className='text-2xl font-bold text-gray-800 mb-6'>Cadastro de Cliente</Text>
+        <KeyboardAvoidingView>
+          <Text className='text-2xl font-bold text-gray-800 mb-6'>Cadastro de Cliente</Text>
 
-        {/* Nome */}
-        <Text className='text-lg font-bold text-gray-800 mb-2 ml-2'>Nome / Razão Social *</Text>
-        <TextInput
-          className='bg-white rounded-xl p-4 border border-gray-300 text-black text-base mb-4'
-          placeholder='Ex: Impacto Extintores'
-          value={nome}
-          onChangeText={setNome}
-          editable={!loading}
-          maxLength={100}
-        />
+          {/* Nome */}
+          <Text className='text-lg font-bold text-gray-800 mb-2 ml-2'>Nome / Razão Social *</Text>
+          <TextInput
+            className='bg-white rounded-xl p-4 border border-gray-300 text-black text-base mb-4'
+            placeholder='Ex: Impacto Extintores'
+            value={nome}
+            onChangeText={setNome}
+            editable={!loading}
+            maxLength={100}
+          />
 
-        {/* CNPJ/CPF */}
-        <Text className='text-lg font-bold text-gray-800 mb-2 ml-2'>CNPJ / CPF *</Text>
-        <TextInput
-          className='bg-white rounded-xl p-4 border border-gray-300 text-black text-base mb-4'
-          placeholder='00.000.000/0000-00 ou 000.000.000-00'
-          value={cnpj}
-          onChangeText={aplicarMascaraCNPJ}
-          keyboardType='numeric'
-          editable={!loading}
-          maxLength={18}
-        />
+          {/* CNPJ/CPF */}
+          <Text className='text-lg font-bold text-gray-800 mb-2 ml-2'>CNPJ / CPF *</Text>
+          <TextInput
+            className='bg-white rounded-xl p-4 border border-gray-300 text-black text-base mb-4'
+            placeholder='00.000.000/0000-00 ou 000.000.000-00'
+            value={cnpj}
+            onChangeText={aplicarMascaraCNPJ}
+            keyboardType='numeric'
+            editable={!loading}
+            maxLength={18}
+          />
 
-        {/* Telefone */}
-        <Text className='text-lg font-bold text-gray-800 mb-2 ml-2'>Telefone</Text>
-        <TextInput
-          className='bg-white rounded-xl p-4 border border-gray-300 text-black text-base mb-4'
-          placeholder='(19) 99999-9999'
-          value={telefone}
-          onChangeText={aplicarMascaraTelefone}
-          keyboardType='phone-pad'
-          editable={!loading}
-          maxLength={15}
-        />
+          {/* Telefone */}
+          <Text className='text-lg font-bold text-gray-800 mb-2 ml-2'>Telefone *</Text>
+          <TextInput
+            className='bg-white rounded-xl p-4 border border-gray-300 text-black text-base mb-4'
+            placeholder='(19) 99999-9999'
+            value={telefone}
+            onChangeText={aplicarMascaraTelefone}
+            keyboardType='phone-pad'
+            editable={!loading}
+            maxLength={15}
+          />
 
-        {/* Endereço */}
-        <Text className='text-lg font-bold text-gray-800 mb-2 ml-2'>Endereço Completo</Text>
-        <TextInput
-          className='bg-white rounded-xl p-4 border border-gray-300 text-black text-base mb-8'
-          placeholder='Rua, Número, Bairro, Cidade'
-          value={endereco}
-          onChangeText={setEndereco}
-          editable={!loading}
-          maxLength={200}
-        />
+          {/* Endereço */}
+          <Text className='text-lg font-bold text-gray-800 mb-2 ml-2'>Endereço Completo *</Text>
+          <TextInput
+            className='bg-white rounded-xl p-4 border border-gray-300 text-black text-base mb-8'
+            placeholder='Rua'
+            value={endereco}
+            onChangeText={setEndereco}
+            editable={!loading}
+            maxLength={200}
+          />
+          <TextInput
+            className='bg-white rounded-xl p-4 border border-gray-300 text-black text-base mb-8'
+            placeholder='Bairro'
+            value={bairro}
+            onChangeText={setBairro}
+          />
+          
 
-        <Text className='text-sm text-gray-500 mb-6 ml-2'>* Campos obrigatórios</Text>
+          <View className='flex-row gap-x-2 mb-4'>
+            <TextInput
+              className='flex-1 bg-white rounded-xl p-4 border border-gray-300 text-black text-base mb-8'
+              placeholder='Nº'
+              value={numero}
+              onChangeText={setNumero}
+              keyboardType='numeric'
+            />
+            
+            <TextInput
+              className='flex-1 bg-white rounded-xl p-4 border border-gray-300 text-black text-base mb-8'
+              placeholder='Cidade'
+              value={cidade}
+              onChangeText={setCidade}
+            />
+          </View>
 
-        {/* Botões */}
-        <View className='flex-row gap-x-4 mt-4 mb-10'>
-          <TouchableOpacity
-            className='flex-1 bg-gray-400 py-4 rounded-full items-center shadow-sm'
-            onPress={handleVoltar}
-            disabled={loading}
-          >
-            <Text className='text-white font-bold text-lg'>Voltar</Text>
-          </TouchableOpacity>
+          <Text className='text-sm text-gray-500 mb-6 ml-2'>* Campos obrigatórios</Text>
 
-          <TouchableOpacity
-            className={`flex-1 py-4 rounded-full items-center shadow-md ${loading ? 'bg-red-400' : 'bg-[#cc0000]'}`}
-            onPress={handleSalvarCliente}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator size='large' color='white' />
-            ) : (
-              <Text className='text-white font-bold text-lg'>Salvar Dados</Text>
-            )}
-          </TouchableOpacity>
-        </View>
+          {/* Botões */}
+          <View className='flex-row gap-x-4 mt-4 mb-10'>
+            <TouchableOpacity
+              className='flex-1 bg-gray-400 py-4 rounded-full items-center shadow-sm'
+              onPress={handleVoltar}
+              disabled={loading}
+            >
+              <Text className='text-white font-bold text-lg'>Voltar</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              className={`flex-1 py-4 rounded-full items-center shadow-md ${loading ? 'bg-red-400' : 'bg-[#cc0000]'}`}
+              onPress={handleSalvarCliente}
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator size='large' color='white' />
+              ) : (
+                <Text className='text-white font-bold text-lg'>Salvar Dados</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
       </View>
     </MenuLayout>
   );
