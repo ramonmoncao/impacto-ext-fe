@@ -128,7 +128,7 @@ export default function TabelaVencimento() {
               <Text className="text-gray-700 text-xs font-semibold mt-1"><Text className="font-bold text-gray-900">Endereço: </Text>{item.endereco || 'Não informado'}</Text>
             </View>
 
-            <View className="bg-white rounded-lg border border-gray-200/60 overflow-hidden">
+            <View className="bg-white rounded-lg border border-gray-200/60 overflow-hidden mt-2">
               <View className="bg-gray-200/50 px-3 py-1.5 flex-row border-b border-gray-200"><Text className="flex-[3] text-xs font-bold text-gray-500">Produtos</Text><Text className="flex-1 text-xs font-bold text-gray-500 text-center">Qtd</Text></View>
               {item.itens && item.itens.length > 0 ? (
                 item.itens.map((subItem, index) => (

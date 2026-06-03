@@ -508,7 +508,7 @@ if (downloadResult.status === 200) {
             className='flex-1 bg-[#cc0000] py-3 rounded-full items-center shadow-md'
             onPress={handleGerarPdf}
           >
-            <Text className='text-white font-bold text-lg'>{editId ? 'Atualizar e PDF' : 'Gerar PDF'}</Text>
+            <Text className='text-white font-bold text-lg'>{editId ? 'Atualizar PDF' : 'Gerar PDF'}</Text>
           </TouchableOpacity>
         </View>
       </View>
