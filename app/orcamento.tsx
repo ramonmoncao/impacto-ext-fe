@@ -49,10 +49,11 @@ export default function Orcamento() {
   const [observacoes, setObservacoes] = useState('');
   const [itens, setItens] = useState<ItemCarrinho[]>([]);
   const [loadingEdicao, setLoadingEdicao] = useState<boolean>(false);
+  const [produtosApi, setProdutosApi] = useState<any[]>([]);
 
   // Controles dos Dropdowns e Seleções
-  const [produtoSelecionado, setProdutoSelecionado] = useState(PRODUTOS_MOCK[0]); 
-  const [quantidadeSelecionada, setQuantidadeSelecionada] = useState(1); 
+  const [produtoSelecionado, setProdutoSelecionado] = useState(PRODUTOS_MOCK[0]);
+  const [quantidadeSelecionada, setQuantidadeSelecionada] = useState(1);
   const [modalProdutoVisivel, setModalProdutoVisivel] = useState(false);
   const [modalQtdVisivel, setModalQtdVisivel] = useState(false);
 
@@ -61,57 +62,84 @@ export default function Orcamento() {
   // EFECT 1: Busca o nome do vendedor no Java caso receba só o email
   useEffect(() => {
     if (usuario && typeof usuario === 'string' && usuario.includes('@')) {
-      api.get(`/users/buscarPorEmail`, { params: { email: usuario } })
-        .then(response => {
+      api
+        .get(`/users/buscarPorEmail`, { params: { email: usuario } })
+        .then((response) => {
           if (response.data && (response.data.nome || response.data.name)) {
             setNomeUsuarioLogado(response.data.nome || response.data.name);
           }
         })
-        .catch(() => console.log("Usando email como fallback."));
+        .catch(() => console.log('Usando email como fallback.'));
     } else if (usuario) {
       setNomeUsuarioLogado(usuario);
     }
   }, [usuario]);
 
-// EFECT 2: NOVA FUNCIONALIDADE - Captura e Preenche os dados caso seja uma Edição
-useEffect(() => {
-  if (editId) {
-    const carregarOrcamentoParaEdicao = async () => {
+  useEffect(() => {
+    const buscarProdutos = async () => {
       try {
-        setLoadingEdicao(true);
-        const response = await api.get(`/api/orcamentos/${editId}`);
-        const orcamentoSalvo = response.data;
+        const response = await api.get('/products');
 
-        if (orcamentoSalvo) {
-          setClienteSelecionado({
-            nome: orcamentoSalvo.nomeCliente,
-            endereco: orcamentoSalvo.endereco,
-            telefone: orcamentoSalvo.telefone,
-          });
-          setBuscaClienteText(orcamentoSalvo.nomeCliente || '');
-          setObservacoes(orcamentoSalvo.observacoes || '');
+        // Mapeando a resposta do Java (name, price) para o padrão que a tela já usa (descricao, valor)
+        const produtosFormatados = response.data.map((prod: any) => ({
+          id: prod.id,
+          descricao: prod.name,
+          valor: prod.price,
+        }));
 
-          // ========================================================
-          // CORREÇÃO: Recupera o Vendedor original para não apagá-lo ao editar!
-          // ========================================================
-          if (orcamentoSalvo.usuarioResponsavel) {
-            setNomeUsuarioLogado(orcamentoSalvo.usuarioResponsavel);
-          }else {
-            // Se o orçamento era velho e não tinha dono, assume que VOCÊ é o dono agora
-            setNomeUsuarioLogado(usuario); 
-          }
-          // Remapeia a estrutura de itens...
-          // ... (resto do código igual)
-            
+        setProdutosApi(produtosFormatados);
+        setProdutoSelecionado(produtosFormatados[0]); // Seleciona o primeiro por padrão
+      } catch (error) {
+        console.error('Erro ao buscar produtos do banco', error);
+        // Fallback: se o banco falhar, usa a lista MOCK
+        setProdutosApi(PRODUTOS_MOCK);
+      }
+    };
+
+    buscarProdutos();
+  }, []);
+
+  // EFECT 2: NOVA FUNCIONALIDADE - Captura e Preenche os dados caso seja uma Edição
+  useEffect(() => {
+    if (editId) {
+      const carregarOrcamentoParaEdicao = async () => {
+        try {
+          setLoadingEdicao(true);
+          const response = await api.get(`/api/orcamentos/${editId}`);
+          const orcamentoSalvo = response.data;
+
+          if (orcamentoSalvo) {
+            setClienteSelecionado({
+              nome: orcamentoSalvo.nomeCliente,
+              endereco: orcamentoSalvo.endereco,
+              telefone: orcamentoSalvo.telefone,
+            });
+            setBuscaClienteText(orcamentoSalvo.nomeCliente || '');
+            setObservacoes(orcamentoSalvo.observacoes || '');
+
+            // ========================================================
+            // CORREÇÃO: Recupera o Vendedor original para não apagá-lo ao editar!
+            // ========================================================
+            if (orcamentoSalvo.usuarioResponsavel) {
+              setNomeUsuarioLogado(orcamentoSalvo.usuarioResponsavel);
+            } else {
+              // Se o orçamento era velho e não tinha dono, assume que VOCÊ é o dono agora
+              setNomeUsuarioLogado(usuario);
+            }
+            // Remapeia a estrutura de itens...
+            // ... (resto do código igual)
+
             // Remapeia a estrutura de itens do Java para o carrinho do React Native
             if (orcamentoSalvo.itens && Array.isArray(orcamentoSalvo.itens)) {
-              const itensMapeados: ItemCarrinho[] = orcamentoSalvo.itens.map((item: any, idx: number) => ({
-                id: item.id ? item.id.toString() : `edit-${idx}-${Date.now()}`,
-                descricao: item.descricaoProduto || item.descricao || 'Produto não identificado',
-                qtd: item.quantidade || 1,
-                unit: item.valorUnitario || 0,
-                total: (item.quantidade || 1) * (item.valorUnitario || 0),
-              }));
+              const itensMapeados: ItemCarrinho[] = orcamentoSalvo.itens.map(
+                (item: any, idx: number) => ({
+                  id: item.id ? item.id.toString() : `edit-${idx}-${Date.now()}`,
+                  descricao: item.descricaoProduto || item.descricao || 'Produto não identificado',
+                  qtd: item.quantidade || 1,
+                  unit: item.valorUnitario || 0,
+                  total: (item.quantidade || 1) * (item.valorUnitario || 0),
+                }),
+              );
               setItens(itensMapeados);
             }
           }
@@ -130,7 +158,7 @@ useEffect(() => {
   // Busca ao digitar (Live Search) com trava de Segurança
   const handleBuscarClienteLive = async (text: string) => {
     setBuscaClienteText(text);
-    
+
     if (!text || text.trim().length === 0) {
       setClientesResultados([]);
       setClienteSelecionado(null);
@@ -142,12 +170,12 @@ useEffect(() => {
 
     try {
       const response = await api.get('/clientes/buscar', { params: { termo: text } });
-      
+
       if (ultimaBuscaRef.current !== text || ultimaBuscaRef.current === '') return;
 
       const clientesApi = Array.isArray(response.data) ? response.data : [response.data];
       const termoLower = text.toLowerCase().trim();
-      
+
       const filtrados = clientesApi.filter((cliente: any) => {
         if (!cliente || !cliente.nome) return false;
         const nomeLower = cliente.nome.toLowerCase();
@@ -209,62 +237,64 @@ useEffect(() => {
     try {
       const payloadOrcamento = {
         nomeCliente: clienteSelecionado.nome,
-        endereco: clienteSelecionado.endereco, 
-        telefone: clienteSelecionado.telefone, 
+        endereco: clienteSelecionado.endereco,
+        telefone: clienteSelecionado.telefone,
         numero: clienteSelecionado.numero,
         cnpj: clienteSelecionado.cnpj,
         rua: clienteSelecionado.rua,
         cidade: clienteSelecionado.cidade,
         bairro: clienteSelecionado.bairro,
-        usuarioResponsavel: nomeUsuarioLogado, 
-        observacoes: observacoes,              
+        usuarioResponsavel: nomeUsuarioLogado,
+        observacoes: observacoes,
         valorTotal: totalDoOrcamento,
-        itens: itens.map(item => ({
+        itens: itens.map((item) => ({
           descricaoProduto: item.descricao,
           quantidade: item.qtd,
-          valorUnitario: item.unit
-        }))
+          valorUnitario: item.unit,
+        })),
       };
 
       let response;
-      
+
       // NOVA LÓGICA: Se houver editId, faz um PUT para atualizar, caso contrário faz um POST normal
       if (editId) {
         response = await api.put(`/api/orcamentos/${editId}`, payloadOrcamento);
         if (mostrarAlerta) {
           Alert.alert('Sucesso!', 'Orçamento atualizado com sucesso no banco de dados!');
         }
-        
+
         // CORREÇÃO: Retorna para a tela de orçamentos fechados DEVOLVENDO o usuário!
-        router.replace({ 
-          pathname: '/orcamentos-fechados', 
-          params: { usuario } 
+        router.replace({
+          pathname: '/orcamentos-fechados',
+          params: { usuario },
         });
-        
       } else {
         response = await api.post('/api/orcamentos', payloadOrcamento);
         if (mostrarAlerta) {
           Alert.alert('Sucesso!', 'Orçamento salvo com sucesso no banco de dados!');
         }
       }
-      
+
       // Limpa os dados do estado após salvar com sucesso
       setItens([]);
       setClienteSelecionado(null);
       setBuscaClienteText('');
       setObservacoes('');
-      
+
       return editId ? (editId as string) : response.data.id;
     } catch (error) {
       console.error(error);
-      Alert.alert('Erro', `Falha ao ${editId ? 'atualizar' : 'salvar'} orçamento no banco de dados.`);
+      Alert.alert(
+        'Erro',
+        `Falha ao ${editId ? 'atualizar' : 'salvar'} orçamento no banco de dados.`,
+      );
       return null;
     }
   };
 
   const handleGerarPdf = async () => {
     const orcamentoId = await handleSalvarOrcamento(false);
-    if (!orcamentoId) return; 
+    if (!orcamentoId) return;
 
     try {
       Alert.alert('Processando', 'Gerando o seu documento PDF...');
@@ -275,18 +305,18 @@ useEffect(() => {
 
       const downloadResult = await FileSystem.downloadAsync(urlBe, localUri);
 
-if (downloadResult.status === 200) {
+      if (downloadResult.status === 200) {
         await Sharing.shareAsync(downloadResult.uri, {
           mimeType: 'application/pdf',
           dialogTitle: 'Visualizar Orçamento',
           UTI: 'com.adobe.pdf',
         });
-        
+
         if (editId) {
           // CORREÇÃO AQUI TAMBÉM:
-          router.replace({ 
-            pathname: '/orcamentos-fechados', 
-            params: { usuario } 
+          router.replace({
+            pathname: '/orcamentos-fechados',
+            params: { usuario },
           });
         }
       } else {
@@ -300,10 +330,10 @@ if (downloadResult.status === 200) {
 
   if (loadingEdicao) {
     return (
-      <MenuLayout activeRoute='/orcamento' pageTitle="Editando Orçamento">
-        <View className="flex-1 justify-center items-center py-20">
-          <ActivityIndicator size="large" color="#cc0000" />
-          <Text className="text-gray-500 mt-2 font-medium">Buscando dados no servidor...</Text>
+      <MenuLayout activeRoute='/orcamento' pageTitle='Editando Orçamento'>
+        <View className='flex-1 justify-center items-center py-20'>
+          <ActivityIndicator size='large' color='#cc0000' />
+          <Text className='text-gray-500 mt-2 font-medium'>Buscando dados no servidor...</Text>
         </View>
       </MenuLayout>
     );
@@ -311,12 +341,11 @@ if (downloadResult.status === 200) {
 
   return (
     <MenuLayout activeRoute='/orcamento' pageTitle={editId ? `Editar Orçamento` : `Novo Orçamento`}>
-      
       {/* Indicador Visual de Edição no Topo */}
       {editId && (
-        <View className="bg-green-100 border border-green-300 rounded-xl p-3 mb-4 flex-row items-center">
-          <Feather name="edit" size={16} color="#15803d" />
-          <Text className="text-green-800 text-xs font-bold ml-2 uppercase">
+        <View className='bg-green-100 border border-green-300 rounded-xl p-3 mb-4 flex-row items-center'>
+          <Feather name='edit' size={16} color='#15803d' />
+          <Text className='text-green-800 text-xs font-bold ml-2 uppercase'>
             Modo de Edição Ativo (Orçamento #{editId.toString().substring(0, 8)})
           </Text>
         </View>
@@ -332,9 +361,12 @@ if (downloadResult.status === 200) {
               placeholder='Buscar Cliente'
               placeholderTextColor='#4a4a4a'
               value={buscaClienteText}
-              onChangeText={handleBuscarClienteLive} 
+              onChangeText={handleBuscarClienteLive}
             />
-            <TouchableOpacity onPress={() => handleBuscarClienteLive(buscaClienteText)} className='p-2'>
+            <TouchableOpacity
+              onPress={() => handleBuscarClienteLive(buscaClienteText)}
+              className='p-2'
+            >
               <Feather name='search' size={20} color='#4a4a4a' />
             </TouchableOpacity>
           </View>
@@ -348,25 +380,31 @@ if (downloadResult.status === 200) {
         </View>
 
         {/* LISTA SUSPENSA ANTI-FANTASMA */}
-        {buscaClienteText.trim().length > 0 && clientesResultados.length > 0 && !clienteSelecionado && (
-          <View className='bg-white border border-gray-300 rounded-lg mt-1 max-h-48 shadow-lg z-50 overflow-hidden'>
-            <ScrollView keyboardShouldPersistTaps='handled' nestedScrollEnabled={true}>
-              {clientesResultados.map((cliente, index) => (
-                <TouchableOpacity
-                  key={cliente.id || index}
-                  className='p-3 border-b border-gray-100'
-                  onPress={() => selecionarCliente(cliente)}
-                >
-                  <Text className='text-gray-800 font-bold text-base'>{cliente.nome}</Text>
-                  <Text className='text-sm text-gray-600 font-medium'>CNPJ/CPF: {cliente.cnpj}</Text>
-                  {cliente.endereco && (
-                    <Text className='text-sm text-gray-500' numberOfLines={1}>{cliente.endereco}</Text>
-                  )}
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-        )}
+        {buscaClienteText.trim().length > 0 &&
+          clientesResultados.length > 0 &&
+          !clienteSelecionado && (
+            <View className='bg-white border border-gray-300 rounded-lg mt-1 max-h-48 shadow-lg z-50 overflow-hidden'>
+              <ScrollView keyboardShouldPersistTaps='handled' nestedScrollEnabled={true}>
+                {clientesResultados.map((cliente, index) => (
+                  <TouchableOpacity
+                    key={cliente.id || index}
+                    className='p-3 border-b border-gray-100'
+                    onPress={() => selecionarCliente(cliente)}
+                  >
+                    <Text className='text-gray-800 font-bold text-base'>{cliente.nome}</Text>
+                    <Text className='text-sm text-gray-600 font-medium'>
+                      CNPJ/CPF: {cliente.cnpj}
+                    </Text>
+                    {cliente.endereco && (
+                      <Text className='text-sm text-gray-500' numberOfLines={1}>
+                        {cliente.endereco}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          )}
 
         <View className='mt-3 bg-transparent p-1'>
           {clienteSelecionado ? (
@@ -480,9 +518,9 @@ if (downloadResult.status === 200) {
       {/* Seção: Resumo e Rodapé */}
       <View className='mb-10 -z-10'>
         <Text className='text-2xl font-bold mb-2'>Resumo</Text>
-        
+
         <Text className='font-bold text-base mb-1'>Observações:</Text>
-        <TextInput 
+        <TextInput
           className='bg-white border border-gray-300 rounded-md px-3 py-2 text-base mb-4'
           value={observacoes}
           onChangeText={setObservacoes}
@@ -504,11 +542,13 @@ if (downloadResult.status === 200) {
           >
             <Text className='text-white font-bold text-lg'>{editId ? 'Atualizar' : 'Salvar'}</Text>
           </TouchableOpacity>
-          <TouchableOpacity 
+          <TouchableOpacity
             className='flex-1 bg-[#cc0000] py-3 rounded-full items-center shadow-md'
             onPress={handleGerarPdf}
           >
-            <Text className='text-white font-bold text-lg'>{editId ? 'Atualizar PDF' : 'Gerar PDF'}</Text>
+            <Text className='text-white font-bold text-lg'>
+              {editId ? 'Atualizar PDF' : 'Gerar PDF'}
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -526,7 +566,7 @@ if (downloadResult.status === 200) {
                   </TouchableOpacity>
                 </View>
                 <FlatList
-                  data={PRODUTOS_MOCK}
+                  data={produtosApi}
                   keyExtractor={(item) => item.id}
                   className='p-2'
                   renderItem={({ item }) => (
