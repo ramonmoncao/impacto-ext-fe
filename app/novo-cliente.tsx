@@ -7,7 +7,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function NovoCliente() {
   const router = useRouter();
-  const { usuario } = useLocalSearchParams();
+  const { usuario, editId } = useLocalSearchParams();
 
   const [nome, setNome] = useState('');
   const [cnpj, setCnpj] = useState('');
@@ -17,7 +17,9 @@ export default function NovoCliente() {
   const [bairro, setBairro] = useState('');
   const [cidade, setCidade] = useState('');
   const [loading, setLoading] = useState(false);
+  const [loadingDados, setLoadingDados] = useState(false);
 
+  const isEdicao = !!editId;
   const formPreenchido =
     nome.length > 0 || cnpj.length > 0 || telefone.length > 0 || endereco.length > 0;
 
@@ -156,6 +158,29 @@ export default function NovoCliente() {
       setLoading(false);
     }
   };
+
+  // Busca os dados se estiver no modo de edição
+  useEffect(() => {
+    if (isEdicao) {
+      const carregarCliente = async () => {
+        setLoadingDados(true);
+        try {
+          const response = await api.get(`/clientes/${editId}`);
+          const cli = response.data;
+          
+          setNome(cli.nome || cli.razaoSocial || '');
+          setEmail(cli.email || '');
+          setTelefone(cli.telefone || '');
+        } catch (error) {
+          Alert.alert('Erro', 'Não foi possível carregar os dados deste cliente.');
+          router.back();
+        } finally {
+          setLoadingDados(false);
+        }
+      };
+      carregarCliente();
+    }
+  }, [editId]);
 
   return (
     <MenuLayout

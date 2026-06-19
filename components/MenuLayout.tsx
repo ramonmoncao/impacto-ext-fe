@@ -168,6 +168,24 @@ export default function MenuLayout({
             </TouchableOpacity>
 
             <TouchableOpacity
+              className={`p-4 rounded-lg mb-4 ${getMenuClass('/clientes')}`}
+              onPress={() => handleNavegacao('/clientes')}
+            >
+              <Text className={`text-lg font-bold text-center ${getTextClass('/clientes')}`}>
+                Clientes
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              className={`p-4 rounded-lg mb-4 ${getMenuClass('/novo-usuario')}`}
+              onPress={() => handleNavegacao('/novo-usuario')}
+            >
+              <Text className={`text-lg font-bold text-center ${getTextClass('/novo-usuario')}`}>
+                Novo Usuário
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
               className='mt-auto flex-row justify-center items-center p-4'
               onPress={() => {
                 setMenuAberto(false);
