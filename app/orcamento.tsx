@@ -57,6 +57,12 @@ export default function Orcamento() {
   const [modalProdutoVisivel, setModalProdutoVisivel] = useState(false);
   const [modalQtdVisivel, setModalQtdVisivel] = useState(false);
 
+  // Estados de Desconto e Preço Customizado
+  const [desconto, setDesconto] = useState('');
+  const [modalPrecoVisivel, setModalPrecoVisivel] = useState(false);
+  const [produtoEditandoPreco, setProdutoEditandoPreco] = useState<any>(null);
+  const [novoPrecoInput, setNovoPrecoInput] = useState('');
+
   const ultimaBuscaRef = useRef(''); // Vigia Anti-Fantasma
 
   // EFECT 1: Busca o nome do vendedor no Java caso receba só o email
@@ -80,7 +86,6 @@ export default function Orcamento() {
       try {
         const response = await api.get('/products');
 
-        // Mapeando a resposta do Java (name, price) para o padrão que a tela já usa (descricao, valor)
         const produtosFormatados = response.data.map((prod: any) => ({
           id: prod.id,
           descricao: prod.name,
@@ -88,10 +93,9 @@ export default function Orcamento() {
         }));
 
         setProdutosApi(produtosFormatados);
-        setProdutoSelecionado(produtosFormatados[0]); // Seleciona o primeiro por padrão
+        setProdutoSelecionado(produtosFormatados[0]);
       } catch (error) {
         console.error('Erro ao buscar produtos do banco', error);
-        // Fallback: se o banco falhar, usa a lista MOCK
         setProdutosApi(PRODUTOS_MOCK);
       }
     };
@@ -99,7 +103,7 @@ export default function Orcamento() {
     buscarProdutos();
   }, []);
 
-  // EFECT 2: NOVA FUNCIONALIDADE - Captura e Preenche os dados caso seja uma Edição
+  // EFECT 2: Captura e Preenche os dados caso seja uma Edição
   useEffect(() => {
     if (editId) {
       const carregarOrcamentoParaEdicao = async () => {
@@ -117,19 +121,12 @@ export default function Orcamento() {
             setBuscaClienteText(orcamentoSalvo.nomeCliente || '');
             setObservacoes(orcamentoSalvo.observacoes || '');
 
-            // ========================================================
-            // CORREÇÃO: Recupera o Vendedor original para não apagá-lo ao editar!
-            // ========================================================
             if (orcamentoSalvo.usuarioResponsavel) {
               setNomeUsuarioLogado(orcamentoSalvo.usuarioResponsavel);
             } else {
-              // Se o orçamento era velho e não tinha dono, assume que VOCÊ é o dono agora
               setNomeUsuarioLogado(usuario);
             }
-            // Remapeia a estrutura de itens...
-            // ... (resto do código igual)
 
-            // Remapeia a estrutura de itens do Java para o carrinho do React Native
             if (orcamentoSalvo.itens && Array.isArray(orcamentoSalvo.itens)) {
               const itensMapeados: ItemCarrinho[] = orcamentoSalvo.itens.map(
                 (item: any, idx: number) => ({
@@ -155,7 +152,6 @@ export default function Orcamento() {
     }
   }, [editId]);
 
-  // Busca ao digitar (Live Search) com trava de Segurança
   const handleBuscarClienteLive = async (text: string) => {
     setBuscaClienteText(text);
 
@@ -221,9 +217,41 @@ export default function Orcamento() {
     setItens(itens.filter((item) => item.id !== idParaRemover));
   };
 
-  const totalDoOrcamento = itens.reduce((acumulador, item) => acumulador + item.total, 0);
+  // PREÇO CUSTOMIZADO (SIGILOSO)
+  const handleLongPressProduto = (item: any) => {
+    setProdutoEditandoPreco(item);
+    setNovoPrecoInput(item.valor.toFixed(2).replace('.', ','));
+    setModalPrecoVisivel(true);
+  };
 
-  // Mapeamento exato para o MongoDB Atlas (Classes Java) atualizado para Edições e Criações
+  const salvarPrecoCustomizado = () => {
+    const precoFloat = parseFloat(novoPrecoInput.replace(',', '.'));
+    if (isNaN(precoFloat) || precoFloat < 0) {
+      Alert.alert('Erro', 'Por favor, insira um valor válido.');
+      return;
+    }
+
+    const produtoCustomizado = {
+      ...produtoEditandoPreco,
+      descricao: produtoEditandoPreco.descricao, // Mantém o nome 100% original e sigiloso
+      valor: precoFloat,
+    };
+
+    setProdutoSelecionado(produtoCustomizado);
+    setModalPrecoVisivel(false);
+    setModalProdutoVisivel(false);
+  };
+
+  // Cálculos do Orçamento
+  const subtotal = itens.reduce((acumulador, item) => acumulador + item.total, 0);
+  let valorDesconto = 0;
+  const percentualDesconto = parseFloat(desconto.replace(/\D/g, ''));
+
+  if (!isNaN(percentualDesconto) && percentualDesconto > 0 && percentualDesconto <= 100) {
+    valorDesconto = subtotal * (percentualDesconto / 100);
+  }
+  const totalDoOrcamento = subtotal - valorDesconto;
+
   const handleSalvarOrcamento = async (mostrarAlerta = true): Promise<string | null> => {
     if (!clienteSelecionado) {
       Alert.alert('Atenção', 'Busque ou cadastre um cliente antes de salvar o orçamento.');
@@ -232,6 +260,12 @@ export default function Orcamento() {
     if (itens.length === 0) {
       Alert.alert('Atenção', 'O carrinho está vazio.');
       return null;
+    }
+
+    let observacoesFinais = observacoes;
+    if (valorDesconto > 0) {
+      observacoesFinais += observacoesFinais ? `\n\n` : '';
+      observacoesFinais += `* Desconto aplicado: ${percentualDesconto}% (- R$ ${valorDesconto.toFixed(2).replace('.', ',')})`;
     }
 
     try {
@@ -245,7 +279,7 @@ export default function Orcamento() {
         cidade: clienteSelecionado.cidade,
         bairro: clienteSelecionado.bairro,
         usuarioResponsavel: nomeUsuarioLogado,
-        observacoes: observacoes,
+        observacoes: observacoesFinais,
         valorTotal: totalDoOrcamento,
         itens: itens.map((item) => ({
           descricaoProduto: item.descricao,
@@ -256,14 +290,12 @@ export default function Orcamento() {
 
       let response;
 
-      // NOVA LÓGICA: Se houver editId, faz um PUT para atualizar, caso contrário faz um POST normal
       if (editId) {
         response = await api.put(`/api/orcamentos/${editId}`, payloadOrcamento);
         if (mostrarAlerta) {
           Alert.alert('Sucesso!', 'Orçamento atualizado com sucesso no banco de dados!');
         }
 
-        // CORREÇÃO: Retorna para a tela de orçamentos fechados DEVOLVENDO o usuário!
         router.replace({
           pathname: '/orcamentos-fechados',
           params: { usuario },
@@ -275,11 +307,11 @@ export default function Orcamento() {
         }
       }
 
-      // Limpa os dados do estado após salvar com sucesso
       setItens([]);
       setClienteSelecionado(null);
       setBuscaClienteText('');
       setObservacoes('');
+      setDesconto('');
 
       return editId ? (editId as string) : response.data.id;
     } catch (error) {
@@ -313,7 +345,6 @@ export default function Orcamento() {
         });
 
         if (editId) {
-          // CORREÇÃO AQUI TAMBÉM:
           router.replace({
             pathname: '/orcamentos-fechados',
             params: { usuario },
@@ -341,7 +372,6 @@ export default function Orcamento() {
 
   return (
     <MenuLayout activeRoute='/orcamento' pageTitle={editId ? `Editar Orçamento` : `Novo Orçamento`}>
-      {/* Indicador Visual de Edição no Topo */}
       {editId && (
         <View className='bg-green-100 border border-green-300 rounded-xl p-3 mb-4 flex-row items-center'>
           <Feather name='edit' size={16} color='#15803d' />
@@ -363,10 +393,7 @@ export default function Orcamento() {
               value={buscaClienteText}
               onChangeText={handleBuscarClienteLive}
             />
-            <TouchableOpacity
-              onPress={() => handleBuscarClienteLive(buscaClienteText)}
-              className='p-2'
-            >
+            <TouchableOpacity onPress={() => handleBuscarClienteLive(buscaClienteText)} className='p-2'>
               <Feather name='search' size={20} color='#4a4a4a' />
             </TouchableOpacity>
           </View>
@@ -379,51 +406,34 @@ export default function Orcamento() {
           </TouchableOpacity>
         </View>
 
-        {/* LISTA SUSPENSA ANTI-FANTASMA */}
-        {buscaClienteText.trim().length > 0 &&
-          clientesResultados.length > 0 &&
-          !clienteSelecionado && (
-            <View className='bg-white border border-gray-300 rounded-lg mt-1 max-h-48 shadow-lg z-50 overflow-hidden'>
-              <ScrollView keyboardShouldPersistTaps='handled' nestedScrollEnabled={true}>
-                {clientesResultados.map((cliente, index) => (
-                  <TouchableOpacity
-                    key={cliente.id || index}
-                    className='p-3 border-b border-gray-100'
-                    onPress={() => selecionarCliente(cliente)}
-                  >
-                    <Text className='text-gray-800 font-bold text-base'>{cliente.nome}</Text>
-                    <Text className='text-sm text-gray-600 font-medium'>
-                      CNPJ/CPF: {cliente.cnpj}
+        {buscaClienteText.trim().length > 0 && clientesResultados.length > 0 && !clienteSelecionado && (
+          <View className='bg-white border border-gray-300 rounded-lg mt-1 max-h-48 shadow-lg z-50 overflow-hidden'>
+            <ScrollView keyboardShouldPersistTaps='handled' nestedScrollEnabled={true}>
+              {clientesResultados.map((cliente, index) => (
+                <TouchableOpacity
+                  key={cliente.id || index}
+                  className='p-3 border-b border-gray-100'
+                  onPress={() => selecionarCliente(cliente)}
+                >
+                  <Text className='text-gray-800 font-bold text-base'>{cliente.nome}</Text>
+                  <Text className='text-sm text-gray-600 font-medium'>CNPJ/CPF: {cliente.cnpj}</Text>
+                  {cliente.endereco && (
+                    <Text className='text-sm text-gray-500' numberOfLines={1}>
+                      {cliente.endereco}
                     </Text>
-                    {cliente.endereco && (
-                      <Text className='text-sm text-gray-500' numberOfLines={1}>
-                        {cliente.endereco}
-                      </Text>
-                    )}
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
-          )}
+                  )}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        )}
 
         <View className='mt-3 bg-transparent p-1'>
           {clienteSelecionado ? (
             <>
-              <Text className='text-gray-800 text-base font-bold'>
-                Cliente: <Text className='font-normal'>{clienteSelecionado.nome}</Text>
-              </Text>
-              <Text className='text-gray-800 text-base font-bold'>
-                Endereço:{' '}
-                <Text className='font-normal'>
-                  {clienteSelecionado.endereco || 'Não informado'}
-                </Text>
-              </Text>
-              <Text className='text-gray-800 text-base font-bold'>
-                Telefone:{' '}
-                <Text className='font-normal'>
-                  {clienteSelecionado.telefone || 'Não informado'}
-                </Text>
-              </Text>
+              <Text className='text-gray-800 text-base font-bold'>Cliente: <Text className='font-normal'>{clienteSelecionado.nome}</Text></Text>
+              <Text className='text-gray-800 text-base font-bold'>Endereço: <Text className='font-normal'>{clienteSelecionado.endereco || 'Não informado'}</Text></Text>
+              <Text className='text-gray-800 text-base font-bold'>Telefone: <Text className='font-normal'>{clienteSelecionado.telefone || 'Não informado'}</Text></Text>
             </>
           ) : (
             <Text className='text-gray-500 italic'>Nenhum cliente selecionado.</Text>
@@ -463,16 +473,12 @@ export default function Orcamento() {
           <Text className='text-lg font-bold'>
             Valor Unit:
             <Text className='font-normal bg-white px-4 py-1 rounded border border-gray-300 ml-2'>
-              R$:{' '}
-              {produtoSelecionado ? produtoSelecionado.valor.toFixed(2).replace('.', ',') : '0,00'}
+              R$: {produtoSelecionado ? produtoSelecionado.valor.toFixed(2).replace('.', ',') : '0,00'}
             </Text>
           </Text>
         </View>
 
-        <TouchableOpacity
-          className='bg-[#cc0000] w-1/2 self-center py-2 rounded-full items-center shadow-sm'
-          onPress={handleAdicionarItem}
-        >
+        <TouchableOpacity className='bg-[#cc0000] w-1/2 self-center py-2 rounded-full items-center shadow-sm' onPress={handleAdicionarItem}>
           <Text className='text-white text-lg font-bold'>Adicionar</Text>
         </TouchableOpacity>
       </View>
@@ -491,21 +497,12 @@ export default function Orcamento() {
         <ScrollView className='max-h-48' nestedScrollEnabled={true}>
           {itens.map((item) => (
             <View key={item.id} className='flex-row items-center py-3 border-b border-gray-300'>
-              <Text className='flex-[2] text-sm' numberOfLines={2}>
-                {item.descricao}
-              </Text>
+              <Text className='flex-[2] text-sm' numberOfLines={2}>{item.descricao}</Text>
               <Text className='flex-1 text-center text-sm'>{item.qtd}</Text>
-              <Text className='flex-1 text-center text-sm'>
-                R$ {item.unit.toFixed(2).replace('.', ',')}
-              </Text>
-              <Text className='flex-1 text-center text-sm font-bold'>
-                R$ {item.total.toFixed(2).replace('.', ',')}
-              </Text>
+              <Text className='flex-1 text-center text-sm'>R$ {item.unit.toFixed(2).replace('.', ',')}</Text>
+              <Text className='flex-1 text-center text-sm font-bold'>R$ {item.total.toFixed(2).replace('.', ',')}</Text>
 
-              <TouchableOpacity
-                className='w-8 items-end'
-                onPress={() => handleRemoverItem(item.id)}
-              >
+              <TouchableOpacity className='w-8 items-end' onPress={() => handleRemoverItem(item.id)}>
                 <View className='bg-[#cc0000] rounded-full p-1'>
                   <Feather name='x' size={14} color='white' />
                 </View>
@@ -517,7 +514,21 @@ export default function Orcamento() {
 
       {/* Seção: Resumo e Rodapé */}
       <View className='mb-10 -z-10'>
-        <Text className='text-2xl font-bold mb-2'>Resumo</Text>
+        <View className="flex-row justify-between items-center mb-2">
+          <Text className='text-2xl font-bold'>Resumo</Text>
+          <View className="flex-row items-center bg-gray-100 px-3 py-1 rounded-full border border-gray-300">
+            <Feather name="percent" size={14} color="#cc0000" />
+            <Text className="font-bold text-sm ml-1 mr-2 text-gray-700">Desc:</Text>
+            <TextInput 
+              className="w-10 text-center font-bold text-base text-[#cc0000]"
+              placeholder="0"
+              keyboardType="numeric"
+              maxLength={2}
+              value={desconto}
+              onChangeText={setDesconto}
+            />
+          </View>
+        </View>
 
         <Text className='font-bold text-base mb-1'>Observações:</Text>
         <TextInput
@@ -528,27 +539,23 @@ export default function Orcamento() {
           multiline
         />
 
-        <Text className='text-lg font-bold mb-6'>
-          Total do Orçamento:{' '}
-          <Text className='font-normal text-[#cc0000]'>
-            R$: {totalDoOrcamento.toFixed(2).replace('.', ',')}
+        <View className="mb-6">
+          {valorDesconto > 0 && (
+            <Text className="text-right text-gray-500 font-bold line-through">
+              De R$ {subtotal.toFixed(2).replace('.', ',')}
+            </Text>
+          )}
+          <Text className='text-xl text-right font-bold'>
+            Total: <Text className='text-[#cc0000] text-3xl ml-2'>R$ {totalDoOrcamento.toFixed(2).replace('.', ',')}</Text>
           </Text>
-        </Text>
+        </View>
 
         <View className='flex-row gap-x-4'>
-          <TouchableOpacity
-            className='flex-1 bg-green-600 py-3 rounded-full items-center shadow-md'
-            onPress={() => handleSalvarOrcamento()}
-          >
+          <TouchableOpacity className='flex-1 bg-green-600 py-3 rounded-full items-center shadow-md' onPress={() => handleSalvarOrcamento()}>
             <Text className='text-white font-bold text-lg'>{editId ? 'Atualizar' : 'Salvar'}</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            className='flex-1 bg-[#cc0000] py-3 rounded-full items-center shadow-md'
-            onPress={handleGerarPdf}
-          >
-            <Text className='text-white font-bold text-lg'>
-              {editId ? 'Atualizar PDF' : 'Gerar PDF'}
-            </Text>
+          <TouchableOpacity className='flex-1 bg-[#cc0000] py-3 rounded-full items-center shadow-md' onPress={handleGerarPdf}>
+            <Text className='text-white font-bold text-lg'>{editId ? 'Atualizar PDF' : 'Gerar PDF'}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -565,6 +572,12 @@ export default function Orcamento() {
                     <Feather name='x' size={24} color='white' />
                   </TouchableOpacity>
                 </View>
+
+                <View className="bg-yellow-100 p-2 border-b border-yellow-300 flex-row items-center">
+                  <Feather name="info" size={14} color="#b45309" className="mr-2"/>
+                  <Text className="text-yellow-800 text-xs flex-1 ml-1">Pressione e segure um item da lista para definir um preço especial exclusivo para este orçamento.</Text>
+                </View>
+
                 <FlatList
                   data={produtosApi}
                   keyExtractor={(item) => item.id}
@@ -576,6 +589,8 @@ export default function Orcamento() {
                         setProdutoSelecionado(item);
                         setModalProdutoVisivel(false);
                       }}
+                      onLongPress={() => handleLongPressProduto(item)}
+                      delayLongPress={400}
                     >
                       <Text className='text-lg flex-1 font-medium'>{item.descricao}</Text>
                       <Text className='text-[#cc0000] font-bold'>
@@ -588,6 +603,41 @@ export default function Orcamento() {
             </TouchableWithoutFeedback>
           </View>
         </TouchableWithoutFeedback>
+      </Modal>
+
+      {/* MODAL: PREÇO CUSTOMIZADO (Long Press) */}
+      <Modal visible={modalPrecoVisivel} transparent={true} animationType='fade'>
+        <View className='flex-1 justify-center bg-black/70 px-6'>
+          <View className='bg-white rounded-2xl p-6 shadow-xl'>
+            <View className="flex-row items-center mb-2">
+              <Feather name="tag" size={20} color="#cc0000" />
+              <Text className='text-xl font-bold text-gray-800 ml-2'>Preço Sob Medida</Text>
+            </View>
+            <Text className='text-gray-600 mb-6 leading-5'>
+              Defina um valor exclusivo para <Text className="font-bold">"{produtoEditandoPreco?.descricao}"</Text> apenas neste orçamento:
+            </Text>
+            
+            <View className="flex-row items-center bg-gray-100 rounded-xl px-4 py-2 border border-gray-300 mb-6">
+              <Text className="text-xl font-bold text-gray-500 mr-2">R$</Text>
+              <TextInput
+                className='flex-1 text-2xl font-bold text-[#cc0000]'
+                keyboardType='numeric'
+                value={novoPrecoInput}
+                onChangeText={setNovoPrecoInput}
+                autoFocus
+              />
+            </View>
+
+            <View className='flex-row gap-x-3'>
+              <TouchableOpacity className='flex-1 bg-gray-400 py-3 rounded-xl items-center' onPress={() => setModalPrecoVisivel(false)}>
+                <Text className='text-white font-bold text-base'>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity className='flex-1 bg-green-600 py-3 rounded-xl items-center' onPress={salvarPrecoCustomizado}>
+                <Text className='text-white font-bold text-base'>Aplicar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
       </Modal>
 
       {/* MODAL: SELECIONAR QUANTIDADE */}
@@ -623,6 +673,7 @@ export default function Orcamento() {
           </View>
         </TouchableWithoutFeedback>
       </Modal>
+
     </MenuLayout>
   );
 }

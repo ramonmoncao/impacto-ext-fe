@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, ActivityIndicator, Alert, ScrollView } from 'react-native';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import MenuLayout from '../components/MenuLayout';
@@ -18,7 +18,7 @@ export default function Clientes() {
       setClientes(response.data);
     } catch (error) {
       console.error(error);
-      Alert.alert('Erro', 'Não foi possível carregar a lista de clientes.');
+      Alert.alert('Erro', 'Não foi possível carregar la lista de clientes.');
     } finally {
       setLoading(false);
     }
@@ -48,37 +48,40 @@ export default function Clientes() {
         {loading ? (
           <ActivityIndicator size="large" color="#cc0000" style={{ marginTop: 50 }} />
         ) : (
-          <View className="pb-10">
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
             {clientes.length === 0 ? (
               <Text className='text-center text-gray-500 mt-10'>Nenhum cliente cadastrado.</Text>
             ) : (
-              clientes.map((item) => (
-                <TouchableOpacity
-                  key={item.id.toString()}
-                  className='bg-white p-4 rounded-xl mb-3 border border-gray-200 shadow-sm flex-row justify-between items-center'
-                  onPress={() => router.push({ pathname: '/novo-cliente', params: { editId: item.id, usuario } })}
-                >
-                  <View className='flex-1 mr-2'>
-                    <Text className='text-lg font-bold text-gray-800' numberOfLines={1}>
-                      {item.nome || item.razaoSocial || 'Cliente sem nome'}
-                    </Text>
-                    <Text className='text-gray-500 text-sm mt-1'>
-                      <Feather name="mail" size={12} /> {item.email || 'Sem e-mail'}
-                    </Text>
-                    <Text className='text-gray-500 text-sm mt-1'>
-                      <Feather name="phone" size={12} /> {item.telefone || 'Sem telefone'}
-                    </Text>
-                  </View>
-                  <View className='items-end justify-center'>
-                    <View className='bg-gray-100 px-3 py-2 rounded-lg flex-row items-center'>
-                      <Feather name="edit-2" size={16} color="#4a4a4a" />
-                      <Text className='text-gray-600 text-sm ml-2 font-bold'>Editar</Text>
+              clientes.map((item, index) => {
+                const uniqueKey = item.id ? item.id.toString() : `cli-${index}`;
+                return (
+                  <TouchableOpacity
+                    key={uniqueKey}
+                    className='bg-white p-4 rounded-xl mb-3 border border-gray-200 shadow-sm flex-row justify-between items-center'
+                    onPress={() => router.push({ pathname: '/novo-cliente', params: { editId: item.id, usuario } })}
+                  >
+                    <View className='flex-1 mr-2'>
+                      <Text className='text-lg font-bold text-gray-800' numberOfLines={1}>
+                        {item.nome || item.razaoSocial || 'Cliente sem nome'}
+                      </Text>
+                      <Text className='text-gray-500 text-sm mt-1'>
+                        <Feather name="mail" size={12} /> {item.email || 'Sem e-mail'}
+                      </Text>
+                      <Text className='text-gray-500 text-sm mt-1'>
+                        <Feather name="phone" size={12} /> {item.telefone || 'Sem telefone'}
+                      </Text>
                     </View>
-                  </View>
-                </TouchableOpacity>
-              ))
+                    <View className='items-end justify-center'>
+                      <View className='bg-gray-100 px-3 py-2 rounded-lg flex-row items-center'>
+                        <Feather name="edit-2" size={16} color="#4a4a4a" />
+                        <Text className='text-gray-600 text-sm ml-2 font-bold'>Editar</Text>
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })
             )}
-          </View>
+          </ScrollView>
         )}
       </View>
     </MenuLayout>
